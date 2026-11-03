@@ -1,0 +1,30 @@
+[package]
+name = "r3manager-app"
+description = "r3manager: a desktop app for developers to manage the buckets and objects of the radosgw accounts behind their AWS CLI profiles."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "r3manager"
+path = "src/main.rs"
+
+[dependencies]
+r3manager-core.workspace = true
+anyhow = "1"
+# GPUI from Zed 1.23.2, as kanbrain: the crates.io release (0.2.2) can't draw on NVIDIA + Wayland, and newer GPUI isn't
+# on crates.io. The `[patch]` entries Zed builds it with are in the workspace Cargo.toml.
+gpui = { git = "https://github.com/zed-industries/zed", tag = "v1.23.2", version = "0.2.2" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", tag = "v1.23.2", features = ["wayland", "x11"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Cursor movement by grapheme in text fields, as GPUI's own input example does.
+unicode-segmentation = "1.12"
+
+[dev-dependencies]
+gpui = { git = "https://github.com/zed-industries/zed", tag = "v1.23.2", version = "0.2.2", features = ["test-support"] }
+
+[lints]
+workspace = true
