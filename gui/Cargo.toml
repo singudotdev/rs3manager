@@ -14,6 +14,8 @@ path = "src/main.rs"
 [dependencies]
 r3manager-core.workspace = true
 anyhow = "1"
+# Local times for objects' dates.
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 # GPUI from Zed 1.23.2, as kanbrain: the crates.io release (0.2.2) can't draw on NVIDIA + Wayland, and newer GPUI isn't
 # on crates.io. The `[patch]` entries Zed builds it with are in the workspace Cargo.toml.
 gpui = { git = "https://github.com/zed-industries/zed", tag = "v1.23.2", version = "0.2.2" }
@@ -25,6 +27,9 @@ unicode-segmentation = "1.12"
 
 [dev-dependencies]
 gpui = { git = "https://github.com/zed-industries/zed", tag = "v1.23.2", version = "0.2.2", features = ["test-support"] }
+tempfile.workspace = true
+# Waits for the core's operations in test setup, outside GPUI.
+tokio = { version = "1", features = ["rt"] }
 
 [lints]
 workspace = true

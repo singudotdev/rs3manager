@@ -5320,9 +5320,12 @@ name = "r3manager-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "gpui",
  "gpui_platform",
  "r3manager-core",
+ "tempfile",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "unicode-segmentation",

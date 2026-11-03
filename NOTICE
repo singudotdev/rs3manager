@@ -1,0 +1,13 @@
+r3manager
+Copyright (C) 2026 singudotdev <contact@singu.dev>
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+Public License version 3 (AGPL-3.0-only, in LICENSE). It is distributed WITHOUT ANY WARRANTY; see LICENSE.
+
+Third-party material included in this repository:
+
+- gui/src/ui/input.rs is adapted from GPUI's examples/input.rs (Zed v1.23.2, https://github.com/zed-industries/zed),
+  Copyright Zed Industries, Inc., licensed under the Apache License, Version 2.0
+  (http://www.apache.org/licenses/LICENSE-2.0).
+- gui/fonts/ibm-plex-sans: IBM Plex Sans, Copyright 2017 IBM Corp. (Reserved Font Name "Plex"), SIL Open Font License 1.1 (license.txt beside it).
+- gui/fonts/lilex: Lilex, Copyright 2019 The Lilex Project Authors, SIL Open Font License 1.1 (OFL.txt beside it).
