@@ -57,24 +57,24 @@ pub fn check_metadata(name: &str, value: &str) -> Result<(), S3Error> {
     Ok(())
 }
 
-/// The `x-amz-copy-source` value for `key` in `bucket`: URL-encoded, with `/` kept, as
-/// [CopyObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html) requires.
-pub(crate) fn copy_source(bucket: &str, key: &str) -> String {
-    let mut out = String::with_capacity(bucket.len() + key.len() + 1);
-    for part in [bucket, "/", key] {
-        if part == "/" {
-            out.push('/');
-            continue;
-        }
-        for byte in part.bytes() {
-            if byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte) {
-                out.push(char::from(byte));
-            } else {
-                let _ = write!(out, "%{byte:02X}");
-            }
+/// `path` percent-encoded for a URL path, `/` and RFC 3986's unreserved characters kept: an object's URL on the
+/// gateway, and the copy source below.
+pub fn url_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte) {
+            out.push(char::from(byte));
+        } else {
+            let _ = write!(out, "%{byte:02X}");
         }
     }
     out
+}
+
+/// The `x-amz-copy-source` value for `key` in `bucket`: URL-encoded, with `/` kept, as
+/// [CopyObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html) requires.
+pub(crate) fn copy_source(bucket: &str, key: &str) -> String {
+    url_path(&format!("{bucket}/{key}"))
 }
 
 /// The Content-Type for a file named `name`, by its extension: what a browser or app fetching the object needs to
