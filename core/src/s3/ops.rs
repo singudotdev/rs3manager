@@ -269,11 +269,19 @@ pub(crate) async fn head(client: &Client, bucket: &str, key: &str) -> Result<Obj
             content_type: out.content_type().map(str::to_owned),
             cache_control: out.cache_control().map(str::to_owned),
             content_disposition: out.content_disposition().map(str::to_owned),
-            content_encoding: out.content_encoding().map(str::to_owned),
+            content_encoding: out.content_encoding().and_then(content_encoding),
             content_language: out.content_language().map(str::to_owned),
             user: out.metadata().map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect()).unwrap_or_default(),
         },
     })
+}
+
+/// An object's real `Content-Encoding` from what the gateway stored: without `aws-chunked`, the upload's transfer
+/// encoding, which [S3 removes](https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-streaming.html) but radosgw
+/// 19.2 keeps when a client (the AWS CLI's `s3 cp`, say) streams with it. Kept, it would be saved back as the object's.
+fn content_encoding(stored: &str) -> Option<String> {
+    let real: Vec<&str> = stored.split(',').map(str::trim).filter(|e| !e.is_empty() && *e != "aws-chunked").collect();
+    (!real.is_empty()).then(|| real.join(", "))
 }
 
 /// Copies object `from` to `to` within `bucket`: with `headers`, replacing its headers and metadata, else keeping
@@ -449,5 +457,17 @@ async fn abort_uploads(client: &Client, bucket: &str) -> Result<(), S3Error> {
         }
         key_marker = page.next_key_marker().map(str::to_owned);
         id_marker = page.next_upload_id_marker().map(str::to_owned);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_upload_transfer_encoding_is_not_the_objects() {
+        assert_eq!(content_encoding("aws-chunked"), None);
+        assert_eq!(content_encoding("aws-chunked, gzip").as_deref(), Some("gzip"));
+        assert_eq!(content_encoding("gzip").as_deref(), Some("gzip"));
     }
 }
