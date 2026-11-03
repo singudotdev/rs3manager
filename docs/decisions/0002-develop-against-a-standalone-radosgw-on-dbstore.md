@@ -1,6 +1,6 @@
 # 2. Develop against a standalone radosgw on dbstore
 
-Date: 2026-11-03. Status: accepted.
+Date: 2026-11-03. Status: superseded by [3](0003-develop-against-a-one-node-ceph-in-a-container.md).
 
 ## Context
 
