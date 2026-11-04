@@ -30,6 +30,13 @@ The app starts on `AWS_PROFILE` (else `default`, else the first profile) and swi
 Profiles added or edited in the app are written to those files, leaving every other line as it was, and work with
 `aws --profile` too. Requests use path-style addressing.
 
+The window shows only what the profile's policies allow. At connect (and on Refresh) it reads the profile's own IAM
+identity, groups and policies and evaluates them: buckets it can't list aren't shown, actions it can't do aren't
+offered, and the New bucket dialog shows the names it may create (e.g. `r3manager-*-dev`) and refuses others before
+sending. Each user needs a policy letting it read its own policies (`dev/rgw.sh project` writes one; see
+`docs/decisions/0004-*`); without it the window asks the gateway instead and hides the buckets it's refused. The
+account's root user may do everything in its account.
+
 A share link is a presigned URL signed with the profile's keys: anyone holding it can download the object until it
 expires, and it can't be revoked before then short of changing those keys.
 

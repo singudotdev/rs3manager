@@ -35,7 +35,11 @@ impl Root {
             );
         }
         if self.browser.bucket().is_none() {
-            let hint = if self.session.is_some() { "Pick a bucket on the left, or create one." } else { "" };
+            let hint = match (self.session.is_some(), self.may_create_buckets()) {
+                (false, _) => "",
+                (true, true) => "Pick a bucket on the left, or create one.",
+                (true, false) => "Pick a bucket on the left.",
+            };
             return base.child(empty(theme, "No bucket open", hint));
         }
         if !self.open_bucket_listable() {
