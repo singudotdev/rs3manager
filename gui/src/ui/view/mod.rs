@@ -13,7 +13,9 @@ mod panes;
 use super::profiles::ProfilesDialog;
 use super::root::{Modal, Root};
 use super::theme::{self, SANS};
-use super::{Cancel, DeleteSelected, FocusFilter, GoUp, Refresh, RenameSelected, SelectAllRows, Submit};
+use super::{
+    Cancel, DeleteSelected, FocusFilter, GoUp, MenuDown, MenuUp, Refresh, RenameSelected, SelectAllRows, Submit,
+};
 use gpui::{Context, ExternalPaths, Focusable as _, Window, div, prelude::*, px};
 
 /// Below this window width the side panels narrow and the list drops its Modified column, so names keep room in half a
@@ -37,6 +39,7 @@ impl Root {
             }
             Some(Modal::Profiles(ProfilesDialog { form: Some(_) })) => self.save_profile(cx),
             Some(Modal::Share(_)) => self.copy_share_link(cx),
+            Some(Modal::ProfileMenu(_)) => self.pick_highlighted(window, cx),
             Some(Modal::Replace { .. }) => self.replace_chosen(false, window, cx),
             Some(Modal::Profiles(ProfilesDialog { form: None })) | None => {}
         }
@@ -104,6 +107,8 @@ impl Render for Root {
             .track_focus(&self.focus.clone())
             .on_action(cx.listener(Self::on_submit))
             .on_action(cx.listener(Self::on_cancel))
+            .on_action(cx.listener(|this, _: &MenuUp, _, cx| this.move_highlight(false, cx)))
+            .on_action(cx.listener(|this, _: &MenuDown, _, cx| this.move_highlight(true, cx)))
             .on_action(cx.listener(|this, _: &Refresh, w, cx| this.browser_key(w, cx, |this, _, cx| this.refresh(cx))))
             .on_action(
                 cx.listener(|this, _: &DeleteSelected, w, cx| this.browser_key(w, cx, Self::ask_delete_selected)),

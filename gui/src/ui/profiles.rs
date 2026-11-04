@@ -1,10 +1,29 @@
-//! The profiles dialog: the AWS CLI's profiles to switch between, and a form to add or edit one. Writing the files
-//! runs on a background thread; the core keeps everything else in them as it was.
+//! Switching profiles from a dropdown with a search field, and the profiles dialog: the AWS CLI's profiles, and a form
+//! to add or edit one. Writing the files runs on a background thread; the core keeps everything else in them as it
+//! was.
 
-use super::input::TextInput;
+use super::input::{Changed, TextInput};
 use super::root::{Confirmed, Modal, Root};
-use gpui::{AppContext as _, AsyncApp, Context, Entity, Focusable as _, SharedString, WeakEntity, Window};
-use r3manager_core::profiles::{Credentials, ProfileEdit};
+use gpui::{
+    AppContext as _, AsyncApp, Context, Entity, Focusable as _, SharedString, Subscription, WeakEntity, Window,
+};
+use r3manager_core::profiles::{Credentials, Profile, ProfileEdit};
+
+/// The dropdown under the profile button: a search field and the profiles it matches.
+pub struct ProfileMenu {
+    /// What's typed.
+    pub query: Entity<TextInput>,
+    /// The match ↑/↓ moved to, which Enter picks.
+    pub highlighted: usize,
+    /// Keeps the highlight on the first match as the query changes.
+    _typing: Subscription,
+}
+
+/// Whether `profile` matches `query`: every word of it, ignoring case, in its name or endpoint.
+pub fn matches(profile: &Profile, query: &str) -> bool {
+    let haystack = format!("{} {}", profile.name, profile.endpoint_url.as_deref().unwrap_or_default()).to_lowercase();
+    query.to_lowercase().split_whitespace().all(|word| haystack.contains(word))
+}
 
 /// The profiles dialog.
 pub struct ProfilesDialog {
@@ -35,6 +54,49 @@ pub struct ProfileForm {
 }
 
 impl Root {
+    /// Opens the profile dropdown, its search field focused.
+    pub fn open_profile_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.reload_profiles(cx);
+        let query = cx.new(|cx| TextInput::new("Search profiles", cx));
+        let typing = cx.subscribe(&query, |this: &mut Self, _, _: &Changed, cx| {
+            if let Some(Modal::ProfileMenu(menu)) = &mut this.modal {
+                menu.highlighted = 0;
+                cx.notify();
+            }
+        });
+        window.focus(&query.read(cx).focus_handle(cx), cx);
+        self.modal = Some(Modal::ProfileMenu(ProfileMenu { query, highlighted: 0, _typing: typing }));
+        cx.notify();
+    }
+
+    /// The profiles the dropdown's query matches, in the files' order.
+    pub fn menu_matches(&self, cx: &gpui::App) -> Vec<&Profile> {
+        let Some(Modal::ProfileMenu(menu)) = &self.modal else { return Vec::new() };
+        let query = menu.query.read(cx).text();
+        self.profiles.iter().filter(|p| matches(p, query)).collect()
+    }
+
+    /// Moves the dropdown's highlight to the next match (or the previous), wrapping around.
+    pub fn move_highlight(&mut self, forward: bool, cx: &mut Context<Self>) {
+        let count = self.menu_matches(cx).len();
+        if let Some(Modal::ProfileMenu(menu)) = &mut self.modal
+            && count > 0
+        {
+            menu.highlighted =
+                if forward { (menu.highlighted + 1) % count } else { (menu.highlighted + count - 1) % count };
+            cx.notify();
+        }
+    }
+
+    /// Switches to the dropdown's highlighted match.
+    pub fn pick_highlighted(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(Modal::ProfileMenu(menu)) = &self.modal else { return };
+        let picked = self.menu_matches(cx).get(menu.highlighted).map(|p| p.name.clone());
+        if let Some(name) = picked {
+            self.pick_profile(name, window, cx);
+        }
+    }
+
     /// Opens the profiles dialog on its list.
     pub fn open_profiles(&mut self, cx: &mut Context<Self>) {
         self.reload_profiles(cx);

@@ -106,6 +106,7 @@ fn until(cx: &mut VisualTestContext, view: &Entity<Root>, what: &str, done: impl
             Some(Modal::Confirm { title, .. }) => format!("confirm {title}"),
             Some(Modal::Profiles(_)) => "profiles".to_owned(),
             Some(Modal::Share(_)) => "share".to_owned(),
+            Some(Modal::ProfileMenu(_)) => "profile menu".to_owned(),
             Some(Modal::Replace { .. }) => "replace".to_owned(),
             None => "none".to_owned(),
         };
@@ -294,6 +295,7 @@ fn profiles_are_added_and_switched_in_the_dialog(cx: &mut TestAppContext) {
     let (view, cx) = window(cx, files.clone());
 
     click(cx, "button test  ▾");
+    click(cx, "button Manage profiles…");
     click(cx, "button Add profile");
     let form = view.read_with(cx, |r, _| match &r.modal {
         Some(Modal::Profiles(super::profiles::ProfilesDialog { form: Some(f) })) => {
@@ -312,6 +314,28 @@ fn profiles_are_added_and_switched_in_the_dialog(cx: &mut TestAppContext) {
     assert_eq!(names, ["test", "second"]);
     let config = std::fs::read_to_string(&files.config).unwrap();
     assert!(config.contains("[profile second]\nendpoint_url = "), "{config}");
+
+    // The dropdown: typing filters, the arrows move, enter switches.
+    click(cx, "button second  ▾");
+    let names = |r: &Root, cx: &gpui::App| r.menu_matches(cx).iter().map(|p| p.name.clone()).collect::<Vec<_>>();
+    assert_eq!(view.read_with(cx, |r, cx| names(r, cx)), ["test", "second"]);
+    cx.simulate_input("TES");
+    assert_eq!(view.read_with(cx, |r, cx| names(r, cx)), ["test"], "by name, any case");
+    let query = view.read_with(cx, |r, _| match &r.modal {
+        Some(Modal::ProfileMenu(menu)) => menu.query.clone(),
+        _ => panic!("the dropdown is open"),
+    });
+    type_into(cx, &query, "127.0.0.1");
+    assert_eq!(view.read_with(cx, |r, cx| names(r, cx)), ["test", "second"], "by endpoint");
+    cx.simulate_keystrokes("down down down");
+    assert!(view.read_with(cx, |r, _| matches!(&r.modal, Some(Modal::ProfileMenu(m)) if m.highlighted == 1)));
+    cx.simulate_keystrokes("up enter");
+    until(cx, &view, "the first profile again", |r| r.profile.as_deref() == Some("test") && r.session.is_some());
+    assert!(view.read_with(cx, |r, _| r.modal.is_none()), "picking closes it");
+
+    click(cx, "button test  ▾");
+    cx.simulate_keystrokes("escape");
+    assert!(view.read_with(cx, |r, _| r.modal.is_none()), "escape closes it");
 }
 
 #[gpui::test]

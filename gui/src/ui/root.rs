@@ -4,7 +4,7 @@
 
 use super::browse::Details;
 use super::input::{Changed, TextInput};
-use super::profiles::ProfilesDialog;
+use super::profiles::{ProfileMenu, ProfilesDialog};
 use super::share::ShareDialog;
 use crate::state::browser::{Browser, Row};
 use crate::state::transfers::{Job, Transfers};
@@ -45,6 +45,8 @@ pub enum Modal {
         /// What may be typed, shown under the field.
         hint: Option<SharedString>,
     },
+    /// The dropdown switching profiles.
+    ProfileMenu(ProfileMenu),
     /// The AWS CLI profiles: pick, add, edit, remove.
     Profiles(ProfilesDialog),
     /// A download link to an object.

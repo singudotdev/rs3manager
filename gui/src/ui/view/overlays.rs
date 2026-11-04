@@ -7,7 +7,7 @@ use super::super::theme::{MONO, Theme};
 use super::super::widgets::{Kind, button, label};
 use crate::state::format::{base_name, size, when};
 use crate::state::transfers::{Job, Status, Transfer};
-use gpui::{Context, Div, div, prelude::*, px, relative};
+use gpui::{Context, Div, Stateful, div, prelude::*, px, relative};
 use r3manager_core::profiles::Credentials;
 use std::fmt::Write as _;
 
@@ -134,6 +134,8 @@ impl Root {
             Modal::Profiles(ProfilesDialog { form: Some(form) }) => Self::profile_form(form, theme, cx),
             Modal::Profiles(ProfilesDialog { form: None }) => self.profile_list(theme, cx),
             Modal::Share(dialog) => Self::share_dialog(dialog, theme, cx),
+            // Drawn under the profile button, without dimming the window.
+            Modal::ProfileMenu(_) => return None,
             Modal::Replace { existing, .. } => {
                 const SHOWN: usize = 6;
                 let count = existing.len();
@@ -177,6 +179,85 @@ impl Root {
             }
         };
         Some(div().absolute().inset_0().flex().items_center().justify_center().bg(theme.scrim).occlude().child(content))
+    }
+
+    /// The profile dropdown, while open: the search field, the matching profiles (the current one marked, the
+    /// highlighted one Enter picks), and the way to the full dialog. A click outside closes it.
+    pub(super) fn profile_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
+        let Some(Modal::ProfileMenu(menu)) = &self.modal else { return None };
+        let current = self.profile.as_deref();
+        let matches = self.menu_matches(cx);
+        let rows = matches.iter().enumerate().map(|(i, p)| {
+            let name = p.name.clone();
+            let selector = format!("menu profile {name}");
+            div()
+                .id(("menu-profile", i))
+                .debug_selector(move || selector)
+                .flex()
+                .items_center()
+                .gap_2()
+                .px_3()
+                .py_1p5()
+                .rounded_md()
+                .cursor_pointer()
+                .when(i == menu.highlighted, |d| d.bg(theme.selected))
+                .when(i != menu.highlighted, |d| d.hover(|s| s.bg(theme.hover)))
+                .child(div().w(px(12.)).text_color(theme.accent).child(if current == Some(name.as_str()) {
+                    "✓"
+                } else {
+                    ""
+                }))
+                .child(
+                    div().flex().flex_col().min_w_0().child(div().truncate().child(name.clone())).child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.muted)
+                            .truncate()
+                            .child(p.endpoint_url.clone().unwrap_or_else(|| "AWS (no endpoint_url)".to_owned())),
+                    ),
+                )
+                .on_click(cx.listener(move |this, _, window, cx| this.pick_profile(name.clone(), window, cx)))
+        });
+        let empty = matches
+            .is_empty()
+            .then(|| div().px_3().py_2().text_xs().text_color(theme.muted).child("No profile matches"));
+        Some(
+            div()
+                .id("profile-menu")
+                .occlude()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .w(px(360.))
+                .p_2()
+                .rounded_lg()
+                .border_1()
+                .border_color(theme.border)
+                .bg(theme.raised)
+                .shadow_lg()
+                .on_mouse_down_out(cx.listener(|this, _, window, cx| {
+                    if matches!(this.modal, Some(Modal::ProfileMenu(_))) {
+                        this.close_modal(window, cx);
+                    }
+                }))
+                .child(menu.query.clone())
+                .child(
+                    div()
+                        .id("profile-matches")
+                        .flex()
+                        .flex_col()
+                        .max_h(px(320.))
+                        .overflow_y_scroll()
+                        .children(rows)
+                        .children(empty),
+                )
+                .child(
+                    div().border_t_1().border_color(theme.border).pt_1().child(
+                        button("manage-profiles", "Manage profiles…", Kind::Quiet, false, theme)
+                            .on_click(cx.listener(|this, _, _, cx| this.open_profiles(cx))),
+                    ),
+                ),
+        )
     }
 
     /// The profiles to pick from.

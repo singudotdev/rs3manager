@@ -5,7 +5,7 @@ use super::super::root::Root;
 use super::super::theme::Theme;
 use super::super::widgets::{Kind, button, mark};
 use crate::state::format::breadcrumbs;
-use gpui::{Context, Div, Stateful, Window, div, prelude::*, px};
+use gpui::{Context, Div, Stateful, Window, deferred, div, prelude::*, px};
 
 impl Root {
     /// The top bar.
@@ -28,8 +28,17 @@ impl Root {
             .border_color(theme.border)
             .child(div().font_weight(gpui::FontWeight::SEMIBOLD).text_base().child("r3manager"))
             .child(
-                button("profile", format!("{profile}  ▾"), Kind::Plain, false, theme)
-                    .on_click(cx.listener(|this, _, _, cx| this.open_profiles(cx))),
+                // The dropdown hangs under the button, drawn after (over) everything else in the window.
+                div()
+                    .relative()
+                    .child(
+                        button("profile", format!("{profile}  ▾"), Kind::Plain, false, theme)
+                            .on_click(cx.listener(|this, _, window, cx| this.open_profile_menu(window, cx))),
+                    )
+                    .children(
+                        self.profile_menu(theme, cx)
+                            .map(|menu| deferred(div().absolute().top(px(32.)).left_0().child(menu)).with_priority(1)),
+                    ),
             )
             .children(endpoint.map(|e| div().text_xs().text_color(theme.muted).truncate().child(e)))
             .children(state.map(|s| div().text_xs().text_color(theme.muted).child(s)))

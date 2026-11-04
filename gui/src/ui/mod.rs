@@ -45,6 +45,10 @@ actions!(
         RenameSelected,
         /// Selects every row shown, or none.
         SelectAllRows,
+        /// Moves to the previous entry of the open list (the profile dropdown).
+        MenuUp,
+        /// Moves to the next entry of the open list.
+        MenuDown,
         /// Opens the folder above.
         GoUp,
         /// Puts the cursor in the filter.
@@ -87,6 +91,8 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("home", Home, field),
         KeyBinding::new("end", End, field),
         KeyBinding::new("enter", Submit, Some("Dialog")),
+        KeyBinding::new("up", MenuUp, Some("Dialog")),
+        KeyBinding::new("down", MenuDown, Some("Dialog")),
         KeyBinding::new("escape", Cancel, None),
         KeyBinding::new("f5", Refresh, browser),
         KeyBinding::new("secondary-r", Refresh, browser),
