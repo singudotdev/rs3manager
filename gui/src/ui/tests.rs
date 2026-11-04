@@ -35,8 +35,27 @@ fn files(dir: &Path) -> Files {
     files
 }
 
-/// A new bucket holding `docs/readme.txt` and `notes.txt`, made through the core, and its name.
-fn bucket(files: &Files, dir: &Path) -> String {
+/// A test's own bucket, deleted with what's in it when the test ends, passed or failed, so runs don't pile buckets up
+/// in the test account (pushing a new one out of the sidebar's sight).
+struct TestBucket {
+    /// Its name.
+    name: String,
+    /// The session that deletes it.
+    session: Session,
+    /// The runtime the session runs on, alive until the bucket is gone.
+    _engine: Engine,
+}
+
+impl Drop for TestBucket {
+    fn drop(&mut self) {
+        if let Err(e) = wait(self.session.delete_bucket(&self.name, true)) {
+            tracing::warn!(target: "r3manager::tests", bucket = %self.name, error = %e, "test bucket left behind");
+        }
+    }
+}
+
+/// A new bucket holding `docs/readme.txt` and `notes.txt`, made through the core.
+fn bucket(files: &Files, dir: &Path) -> TestBucket {
     // Tests run side by side and may start in the same millisecond: the counter keeps their buckets apart.
     static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let engine = Engine::new().unwrap();
@@ -50,7 +69,7 @@ fn bucket(files: &Files, dir: &Path) -> String {
         let headers = Headers { content_type: Some("text/plain".into()), ..Headers::default() };
         wait(session.upload(&name, key, &path, headers, Progress::new())).unwrap();
     }
-    name
+    TestBucket { name, session, _engine: engine }
 }
 
 /// The window on the test profile, once its buckets are listed.
@@ -109,7 +128,8 @@ fn type_into(cx: &mut VisualTestContext, field: &Entity<TextInput>, text: &str) 
 fn browsing_previewing_and_editing_headers(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let files = files(dir.path());
-    let name = bucket(&files, dir.path());
+    let test_bucket = bucket(&files, dir.path());
+    let name = &test_bucket.name;
     let (view, cx) = window(cx, files);
 
     click(cx, &format!("bucket {name}"));
@@ -164,7 +184,8 @@ fn browsing_previewing_and_editing_headers(cx: &mut TestAppContext) {
 fn creating_renaming_and_deleting_from_the_window(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let files = files(dir.path());
-    let name = bucket(&files, dir.path());
+    let test_bucket = bucket(&files, dir.path());
+    let name = &test_bucket.name;
     let (view, cx) = window(cx, files);
     click(cx, &format!("bucket {name}"));
     until(cx, &view, "the bucket's rows", |r| r.browser.len() == 2);
