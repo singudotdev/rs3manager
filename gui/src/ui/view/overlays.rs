@@ -141,8 +141,9 @@ impl Root {
         Some(div().absolute().inset_0().flex().items_center().justify_center().bg(theme.scrim).occlude().child(content))
     }
 
-    /// The question before an upload of `total` files of which `existing` are already there: each button says what
-    /// it does to how many, the safe one first; uploading only the new ones isn't offered when there are none.
+    /// The question before an upload of `total` files of which `existing` are already there. Both answers name what
+    /// they do to those files, the ones listed ("Overwrite 3", "Skip 3"), so neither reads as a choice about the
+    /// rest; skipping isn't offered when every file is there, as it would upload nothing (that's Cancel).
     fn replace_dialog(total: usize, existing: &[String], theme: &Theme, cx: &mut Context<Self>) -> Div {
         const SHOWN: usize = 6;
         let (count, new) = (existing.len(), total - existing.len());
@@ -179,7 +180,7 @@ impl Root {
                     )
                     .when(new > 0, |d| {
                         d.child(
-                            button("only-new", format!("Upload only the {new} new"), Kind::Primary, false, theme)
+                            button("skip", format!("Skip {count}"), Kind::Primary, false, theme)
                                 .on_click(cx.listener(|this, _, window, cx| this.replace_chosen(false, window, cx))),
                         )
                     }),

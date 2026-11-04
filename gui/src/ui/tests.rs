@@ -265,6 +265,8 @@ fn creating_renaming_and_deleting_from_the_window(cx: &mut TestAppContext) {
         "the replace question",
         |r| matches!(&r.modal, Some(Modal::Replace { existing, .. }) if existing == &["dropped/sub/a.json"]),
     );
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("button Skip 1").is_some() && cx.debug_bounds("button Overwrite 1").is_some());
     cx.simulate_keystrokes("enter");
     until(cx, &view, "the new file", |r| r.modal.is_none() && !r.transfers.busy() && r.transfers.items().len() == 2);
     let uploaded = |r: &Root| match &r.transfers.items().last().unwrap().job {
@@ -273,13 +275,16 @@ fn creating_renaming_and_deleting_from_the_window(cx: &mut TestAppContext) {
     };
     assert_eq!(view.read_with(cx, |r, _| uploaded(r)), "dropped/sub/b.json");
 
-    // When every file is there, enter overwrites nothing and only-new isn't offered.
+    // When every file is there, enter overwrites nothing and skipping isn't offered.
     view.update(cx, |r, cx| r.upload_paths(vec![local.clone()], cx));
-    until(cx, &view, "the all-existing question", |r| {
-        matches!(&r.modal, Some(Modal::Replace { jobs, existing }) if jobs.len() == 2 && existing.len() == 2)
-    });
+    until(
+        cx,
+        &view,
+        "the all-existing question",
+        |r| matches!(&r.modal, Some(Modal::Replace { jobs, existing }) if jobs.len() == 2 && existing.len() == 2),
+    );
     cx.run_until_parked();
-    assert!(cx.debug_bounds("button Upload only the 0 new").is_none());
+    assert!(cx.debug_bounds("button Skip 2").is_none());
     cx.simulate_keystrokes("enter");
     assert!(view.read_with(cx, |r, _| matches!(r.modal, Some(Modal::Replace { .. }))), "enter doesn't overwrite");
     cx.simulate_keystrokes("escape");
