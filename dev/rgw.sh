@@ -7,9 +7,11 @@
 #                                 the root's profile
 #   dev/rgw.sh breakglass NAME    lift the guardrails of account NAME's root, through a throwaway second root; the next
 #                                 `account NAME` puts them back (as they are in this script)
+#   dev/rgw.sh admin ACCOUNT USER create devsecops admin USER in ACCOUNT (or reuse it), print its profile
 #   dev/rgw.sh project PROJECT ENV USER rw|ro
 #                                 account PROJECT-ENV with the team's groups, USER in read-write-objects and in
-#                                 read-write-buckets (rw) or read-only-buckets (ro); print USER's profile
+#                                 read-write-buckets (rw) or read-only-buckets (ro); print USER's profile. Done as
+#                                 admin $PLATFORM_ADMIN (default devsecops), created if needed
 #   dev/rgw.sh down               stop it, keeping the data
 #   dev/rgw.sh reset              stop it and delete the data
 #   dev/rgw.sh logs               follow its log
@@ -178,50 +180,82 @@ group_policy() {
       {"Effect":"Allow","Action":["s3:CreateBucket","s3:DeleteBucket"],"Resource":"'$buckets'"},'"$deny"']}' ;;
   esac
 }
+# Prints the keys of IAM user $1, two lines, through the IAM command in the other arguments: its first key, the secret
+# read back with radosgw-admin (IAM never shows it again), else a new key. Idempotent, so scripts can call it each time.
+iam_user_keys() {
+  local user=$1 key
+  shift
+  key=$("$@" list-access-keys --user-name "$user" --query 'AccessKeyMetadata[0].AccessKeyId' --output text)
+  if [[ -z $key || $key == None ]]; then
+    "$@" create-access-key --user-name "$user" >/dev/null || die "couldn't create a key for $user"
+    key=$("$@" list-access-keys --user-name "$user" --query 'AccessKeyMetadata[0].AccessKeyId' --output text)
+  fi
+  admin user info --access-key="$key" | python3 -c '
+import json, sys
+key = sys.argv[1]
+print(key); print(next(k["secret_key"] for k in json.load(sys.stdin)["keys"] if k["access_key"] == key))' "$key"
+}
+
+# The keys (two lines) in a profile on stdin.
+profile_keys() { sed -n 's/^aws_access_key_id = //p; s/^aws_secret_access_key = //p'; }
+
+# Creates devsecops admin $2 in account $1 (or reuses it) and prints its profile. Admins live under IAM path
+# /platform/ and administer the account with their own keys, the root's kept for emergencies (docs/decisions/0005-*).
+# Their policy lets them do everything but the sharing actions and touching the root or any admin: their policies,
+# keys, groups or the users themselves, so no admin lifts a guardrail or takes another's place. The path covers admins
+# added later without rewriting anyone's policy.
+platform_admin() {
+  local account=${1:?usage: dev/rgw.sh admin ACCOUNT USER} user=${2:?USER} id access secret
+  { read -r access; read -r secret; } < <(account "$account" | profile_keys)
+  id=$(admin account get --account-name="$account" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+  local iam=(aws_as "$access" "$secret" iam) arn="arn:aws:iam::$id:user"
+  "${iam[@]}" create-user --user-name "$user" --path /platform/ >/dev/null 2>&1 || true
+  [[ $("${iam[@]}" get-user --user-name "$user" --query User.Path --output text) == /platform/ ]] \
+    || die "$user exists in $account outside /platform/: not making it an admin"
+  "${iam[@]}" put-user-policy --user-name "$user" --policy-name platform-admin --policy-document \
+    '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:*","s3:*"],"Resource":"*"},
+      {"Effect":"Deny","Action":['"$SHARING"'],"Resource":"*"},
+      {"Effect":"Deny","Action":["iam:PutUserPolicy","iam:DeleteUserPolicy","iam:AttachUserPolicy",
+        "iam:DetachUserPolicy","iam:DeleteUser","iam:UpdateUser","iam:CreateAccessKey","iam:UpdateAccessKey",
+        "iam:DeleteAccessKey","iam:AddUserToGroup","iam:RemoveUserFromGroup"],
+       "Resource":["'"$arn/platform/*"'","'"$arn/$account-root"'"]}]}' >/dev/null \
+    || die "couldn't give $user its admin policy in $account"
+  iam_user_keys "$user" "${iam[@]}" | print_profile "$user-$account"
+}
+
 project() {
   local project=${1:?usage: dev/rgw.sh project PROJECT ENV USER rw|ro} env=${2:?ENV} user=${3:?USER} mode=${4:?rw|ro}
   [[ $mode == rw || $mode == ro ]] || die "the bucket access is rw or ro, not '$mode'"
-  local account="$project-$env" root access secret group
-  { read -r access; read -r secret; } < <(account "$account" | sed -n 's/^aws_access_key_id = //p; s/^aws_secret_access_key = //p')
-  root=(aws_as "$access" "$secret" iam)
+  local account="$project-$env" access secret group
+  { read -r access; read -r secret; } < <(platform_admin "$account" "${PLATFORM_ADMIN:-devsecops}" | profile_keys)
+  local iam=(aws_as "$access" "$secret" iam)
   for group in read-write-objects read-only-buckets read-write-buckets; do
-    "${root[@]}" create-group --group-name "$group" >/dev/null 2>&1 || true
-    "${root[@]}" put-group-policy --group-name "$group" --policy-name "$group" \
+    "${iam[@]}" create-group --group-name "$group" >/dev/null 2>&1 || true
+    "${iam[@]}" put-group-policy --group-name "$group" --policy-name "$group" \
       --policy-document "$(group_policy "$group" "$project" "$env" | tr -d '\n')" >/dev/null \
       || die "couldn't set the policy of group $group in $account"
   done
-  "${root[@]}" create-user --user-name "$user" >/dev/null 2>&1 || true
+  "${iam[@]}" create-user --user-name "$user" >/dev/null 2>&1 || true
   local buckets=read-only-buckets other=read-write-buckets
   [[ $mode == rw ]] && { buckets=read-write-buckets; other=read-only-buckets; }
   for group in read-write-objects "$buckets"; do
-    "${root[@]}" add-user-to-group --user-name "$user" --group-name "$group" >/dev/null \
+    "${iam[@]}" add-user-to-group --user-name "$user" --group-name "$group" >/dev/null \
       || die "couldn't add $user to $group in $account"
   done
   # Switching rw and ro takes the user out of the other group, which would otherwise still grant its rights.
-  "${root[@]}" remove-user-from-group --user-name "$user" --group-name "$other" >/dev/null 2>&1 || true
+  "${iam[@]}" remove-user-from-group --user-name "$user" --group-name "$other" >/dev/null 2>&1 || true
   # Reading its own policies lets r3manager show only what the user may do. radosgw refuses policy variables
   # (${aws:username}) in IAM resources, so the ARNs are written out per user.
   local id iam_arn
   id=$(admin account get --account-name="$account" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
   iam_arn="arn:aws:iam::$id"
-  "${root[@]}" put-user-policy --user-name "$user" --policy-name read-own-policies --policy-document \
+  "${iam[@]}" put-user-policy --user-name "$user" --policy-name read-own-policies --policy-document \
     '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:GetUser","iam:ListGroupsForUser",
       "iam:ListUserPolicies","iam:GetUserPolicy","iam:ListAttachedUserPolicies"],"Resource":"'"$iam_arn:user/$user"'"},
       {"Effect":"Allow","Action":["iam:ListGroupPolicies","iam:GetGroupPolicy","iam:ListAttachedGroupPolicies"],
       "Resource":["'"$iam_arn:group/read-write-objects"'","'"$iam_arn:group/$buckets"'"]}]}' >/dev/null \
     || die "couldn't let $user read its own policies in $account"
-  # Idempotent: the user's first key, its secret read back with radosgw-admin, else a new key.
-  local key
-  key=$("${root[@]}" list-access-keys --user-name "$user" --query 'AccessKeyMetadata[0].AccessKeyId' --output text)
-  if [[ -z $key || $key == None ]]; then
-    "${root[@]}" create-access-key --user-name "$user" >/dev/null || die "couldn't create a key for $user"
-    key=$("${root[@]}" list-access-keys --user-name "$user" --query 'AccessKeyMetadata[0].AccessKeyId' --output text)
-  fi
-  admin user info --access-key="$key" | python3 -c '
-import json, sys
-key = sys.argv[1]
-print(key); print(next(k["secret_key"] for k in json.load(sys.stdin)["keys"] if k["access_key"] == key))' "$key" \
-    | print_profile "$user-$account"
+  iam_user_keys "$user" "${iam[@]}" | print_profile "$user-$account"
 }
 case ${1:-} in
   up) up ;;
@@ -232,5 +266,6 @@ case ${1:-} in
   account) shift; account "$@" ;;
   project) shift; project "$@" ;;
   breakglass) shift; breakglass "$@" ;;
-  *) sed -n '2,18s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+  admin) shift; platform_admin "$@" ;;
+  *) sed -n '2,20s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
 esac
