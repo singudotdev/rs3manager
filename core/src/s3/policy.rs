@@ -4,8 +4,9 @@
 //!
 //! Evaluation follows [AWS's policy evaluation logic] for identity policies within one account: an explicit Deny wins,
 //! else an Allow grants, else it's denied. Statements with a `Condition` or a policy variable can't be judged without
-//! the request, so they make the answer [`Decision::Unknown`] when they'd change it. Bucket policies aren't read
-//! (a user can't read them before having access), so something a bucket policy alone grants shows as denied.
+//! the request, so they make the answer [`Decision::Unknown`] when they'd change it. Bucket policies aren't read: the
+//! team grants rights only through account users' and groups' policies and doesn't allow bucket policies
+//! (`docs/decisions/0004-*`), so identity policies are the whole answer.
 //!
 //! [AWS's policy evaluation logic]: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic.html
 
