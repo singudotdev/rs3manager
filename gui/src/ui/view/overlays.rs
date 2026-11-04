@@ -2,9 +2,10 @@
 
 use super::super::profiles::{ProfileForm, ProfilesDialog};
 use super::super::root::{Modal, Root};
+use super::super::share::{Expiry, ShareDialog};
 use super::super::theme::{MONO, Theme};
 use super::super::widgets::{Kind, button, label};
-use crate::state::format::{base_name, size};
+use crate::state::format::{base_name, size, when};
 use crate::state::transfers::{Job, Status, Transfer};
 use gpui::{Context, Div, div, prelude::*, px, relative};
 use r3manager_core::profiles::Credentials;
@@ -131,6 +132,7 @@ impl Root {
                 ),
             Modal::Profiles(ProfilesDialog { form: Some(form) }) => Self::profile_form(form, theme, cx),
             Modal::Profiles(ProfilesDialog { form: None }) => self.profile_list(theme, cx),
+            Modal::Share(dialog) => Self::share_dialog(dialog, theme, cx),
         };
         Some(div().absolute().inset_0().flex().items_center().justify_center().bg(theme.scrim).occlude().child(content))
     }
@@ -199,6 +201,56 @@ impl Root {
                     .child(
                         button("close", "Close", Kind::Primary, false, theme)
                             .on_click(cx.listener(|this, _, window, cx| this.close_modal(window, cx))),
+                    ),
+            )
+    }
+
+    /// The share dialog: how long the link works, the link, and what holding it allows.
+    fn share_dialog(dialog: &ShareDialog, theme: &Theme, cx: &mut Context<Self>) -> Div {
+        let choices = Expiry::ALL.into_iter().map(|expiry| {
+            let kind = if expiry == dialog.expiry { Kind::Primary } else { Kind::Plain };
+            button(expiry.label(), expiry.label(), kind, false, theme)
+                .on_click(cx.listener(move |this, _, _, cx| this.set_share_expiry(expiry, cx)))
+        });
+        let name = base_name(&dialog.key).to_owned();
+        let (link, note) = match (&dialog.link, &dialog.error) {
+            (_, Some(e)) => (div().text_xs().text_color(theme.danger).child(e.clone()), None),
+            (Some((link, until)), None) => (
+                div().text_xs().font_family(MONO).child(link.clone()),
+                Some(format!(
+                    "Anyone with this link can download {name} until {}. It can't be revoked, short of changing \
+                     the profile's keys.",
+                    when(*until)
+                )),
+            ),
+            (None, None) => (div().text_xs().text_color(theme.muted).child("Signing…"), None),
+        };
+        card(theme, 520.)
+            .child(heading(format!("Share {name}").into()))
+            .child(label("Link works for", theme))
+            .child(div().flex().gap_1().children(choices))
+            .child(
+                div()
+                    .max_h(px(160.))
+                    .overflow_hidden()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(theme.border)
+                    .bg(theme.bg)
+                    .p_2()
+                    .debug_selector(|| "share link".to_owned())
+                    .child(link),
+            )
+            .children(note.map(|n| div().text_xs().text_color(theme.muted).child(n)))
+            .child(
+                footer()
+                    .child(
+                        button("share-close", "Close", Kind::Plain, false, theme)
+                            .on_click(cx.listener(|this, _, window, cx| this.close_modal(window, cx))),
+                    )
+                    .child(
+                        button("share-copy", "Copy link", Kind::Primary, dialog.link.is_none(), theme)
+                            .on_click(cx.listener(|this, _, _, cx| this.copy_share_link(cx))),
                     ),
             )
     }

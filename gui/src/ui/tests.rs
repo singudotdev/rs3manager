@@ -78,6 +78,7 @@ fn until(cx: &mut VisualTestContext, view: &Entity<Root>, what: &str, done: impl
             Some(Modal::Prompt { error, busy, .. }) => format!("name dialog (busy {busy}, error {error:?})"),
             Some(Modal::Confirm { title, .. }) => format!("confirm {title}"),
             Some(Modal::Profiles(_)) => "profiles".to_owned(),
+            Some(Modal::Share(_)) => "share".to_owned(),
             None => "none".to_owned(),
         };
         let rows: Vec<_> = root.browser.rows().map(|r| r.key().to_owned()).collect();
@@ -141,6 +142,21 @@ fn browsing_previewing_and_editing_headers(cx: &mut TestAppContext) {
         r.details.as_ref().and_then(|d| d.info.as_ref()).and_then(|i| i.headers.content_type.as_deref())
             == Some("text/markdown")
     });
+
+    // A share link, signed for a day, then for an hour once picked; enter copies it.
+    click(cx, "button Share link");
+    let link = |r: &Root| match &r.modal {
+        Some(Modal::Share(d)) => d.link.as_ref().map(|(l, _)| (d.expiry, l.to_string())),
+        _ => None,
+    };
+    until(cx, &view, "the day link", |r| link(r).is_some_and(|(e, _)| e == super::share::Expiry::Day));
+    assert!(cx.debug_bounds("share link").is_some(), "the link is shown");
+    click(cx, "button 1 hour");
+    until(cx, &view, "the hour link", |r| link(r).is_some_and(|(e, _)| e == super::share::Expiry::Hour));
+    let (_, signed) = view.read_with(cx, |r, _| link(r).unwrap());
+    assert!(signed.contains(&format!("/{name}/notes.txt?")) && signed.contains("X-Amz-Expires=3600"), "{signed}");
+    cx.simulate_keystrokes("enter");
+    assert_eq!(cx.read_from_clipboard().and_then(|c| c.text()), Some(signed));
 }
 
 #[gpui::test]

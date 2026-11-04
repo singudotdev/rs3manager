@@ -6,6 +6,7 @@ use r3manager_core::profiles::{Files, ProfileEdit};
 use r3manager_core::s3::{Engine, Headers, Progress, S3Error, Session};
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
 
 /// Waits for `future` on a throwaway executor, as the app's own (GPUI's) would.
 fn wait<T>(future: impl Future<Output = T>) -> T {
@@ -158,4 +159,45 @@ fn a_wrong_secret_is_told_apart() {
     let session = wait(engine.connect(&profile(dir.path(), Some("wrong-secret")), "test")).unwrap();
     let result = wait(session.list_buckets());
     assert!(matches!(result, Err(S3Error::BadCredentials(_))), "{result:?}");
+}
+
+/// Status and body of a plain HTTP GET of `url`, with no credentials, as a browser holding a shared link would send.
+/// The local gateway speaks plain HTTP, so std's socket is enough.
+fn fetch(url: &str) -> (u16, Vec<u8>) {
+    use std::io::{Read as _, Write as _};
+    let rest = url.strip_prefix("http://").expect("the local gateway is plain HTTP");
+    let (host, path) = rest.split_once('/').map_or((rest, "/".to_owned()), |(h, p)| (h, format!("/{p}")));
+    let mut stream = std::net::TcpStream::connect(host).unwrap();
+    write!(stream, "GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n").unwrap();
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).unwrap();
+    let split = response.windows(4).position(|w| w == b"\r\n\r\n").expect("a full response");
+    let status = std::str::from_utf8(&response[9..12]).unwrap().parse().unwrap();
+    (status, response[split + 4..].to_vec())
+}
+
+#[test]
+#[ignore = "needs a radosgw: dev/test-rgw.sh"]
+fn shared_links_download_without_credentials_until_they_expire() {
+    let (_engine, session, bucket, dir) = setup("share");
+    // A key that needs escaping in the URL, as a signature over the wrong encoding is refused.
+    let key = "docs/año 2026+.txt";
+    put(&session, &bucket, dir.path(), key, b"shared", Headers::default());
+
+    let link = wait(session.share(&bucket, key, Duration::from_secs(3600))).unwrap();
+    assert_eq!(fetch(&link), (200, b"shared".to_vec()));
+
+    let forged = link.replacen("X-Amz-Expires=3600", "X-Amz-Expires=3601", 1);
+    assert_ne!(forged, link);
+    assert_eq!(fetch(&forged).0, 403, "a changed link is refused");
+
+    let short = wait(session.share(&bucket, key, Duration::from_secs(1))).unwrap();
+    std::thread::sleep(Duration::from_secs(2));
+    // S3 answers 403; radosgw 19.2.0 answers 500 UnknownError. Either way it's refused, without the object.
+    let (status, body) = fetch(&short);
+    assert!(matches!(status, 403 | 500) && !body.ends_with(b"shared"), "an expired link is refused: {status}");
+
+    let week_and_a_bit = Duration::from_secs(7 * 24 * 3600 + 1);
+    assert!(matches!(wait(session.share(&bucket, key, week_and_a_bit)), Err(S3Error::Invalid(_))));
+    wait(session.delete_bucket(&bucket, true)).unwrap();
 }

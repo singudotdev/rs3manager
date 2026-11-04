@@ -2,7 +2,8 @@
 
 A desktop app for developers to work with the buckets and objects of their Ceph RADOS Gateway (radosgw) account, as
 they did in the MinIO console: browse folders, upload (files, folders, or dropped on the window), download, rename or
-move, delete, preview text and images, and edit an object's headers and metadata. Written in Rust with
+move, delete, preview text and images, edit an object's headers and metadata, and share a download link that expires
+(one hour to seven days). Written in Rust with
 [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui).
 
 Cluster administration (accounts, users, quotas) stays with the team running Ceph; r3manager only does what an
@@ -28,6 +29,9 @@ aws_secret_access_key = ...
 The app starts on `AWS_PROFILE` (else `default`, else the first profile) and switches between them from the top bar.
 Profiles added or edited in the app are written to those files, leaving every other line as it was, and work with
 `aws --profile` too. Requests use path-style addressing.
+
+A share link is a presigned URL signed with the profile's keys: anyone holding it can download the object until it
+expires, and it can't be revoked before then short of changing those keys.
 
 On the Ceph side, `dev/rgw.sh account NAME` creates an account and its root user and prints that profile; on a cluster
 node run it as `RGW_ADMIN=radosgw-admin RGW_ENDPOINT=https://s3.example.com dev/rgw.sh account NAME`.

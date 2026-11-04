@@ -45,6 +45,10 @@ impl Root {
                     .on_click(cx.listener(|this, _, window, cx| this.ask_delete_selected(window, cx))),
             )
             .child(
+                button("d-share", "Share link", Kind::Plain, false, theme)
+                    .on_click(cx.listener(|this, _, window, cx| this.open_share(window, cx))),
+            )
+            .child(
                 button("d-key", "Copy key", Kind::Quiet, false, theme)
                     .on_click(cx.listener(|this, _, _, cx| this.copy_key(cx))),
             )

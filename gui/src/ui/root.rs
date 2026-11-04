@@ -5,6 +5,7 @@
 use super::browse::Details;
 use super::input::{Changed, TextInput};
 use super::profiles::ProfilesDialog;
+use super::share::ShareDialog;
 use crate::state::browser::{Browser, Row};
 use crate::state::transfers::Transfers;
 use gpui::{
@@ -44,6 +45,8 @@ pub enum Modal {
     },
     /// The AWS CLI profiles: pick, add, edit, remove.
     Profiles(ProfilesDialog),
+    /// A download link to an object.
+    Share(ShareDialog),
 }
 
 /// What a confirmation does.

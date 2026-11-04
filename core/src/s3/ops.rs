@@ -8,7 +8,9 @@ use super::names::{check_bucket_name, check_key, copy_source};
 use super::{Bucket, DeleteReport, Headers, ObjectEntry, ObjectInfo, Page, Pending, Preview, S3Error, Session};
 use super::{size, time};
 use aws_sdk_s3::Client;
+use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, MetadataDirective, ObjectIdentifier};
+use std::time::Duration;
 
 /// The largest object `CopyObject` copies in one request; larger ones are copied in parts.
 const COPY_LIMIT: u64 = 5 * 1024 * 1024 * 1024;
@@ -143,6 +145,20 @@ impl Session {
                 .to_vec();
             let truncated = total > bytes.len() as u64;
             Ok(Preview { bytes, truncated })
+        })
+    }
+
+    /// A link that downloads object `key` without credentials until `expires` from now, signed with the profile's
+    /// keys: anyone holding it can read the object meanwhile, and it can't be revoked short of changing those keys.
+    /// The signature works offline, so the object isn't checked to exist. `SigV4` caps `expires` at seven days, and a
+    /// link signed with temporary credentials (SSO) stops working when they expire.
+    pub fn share(&self, bucket: &str, key: &str, expires: Duration) -> Pending<String> {
+        let (bucket, key) = (bucket.to_owned(), key.to_owned());
+        self.spawn(move |client| async move {
+            let config =
+                PresigningConfig::expires_in(expires).map_err(|e| S3Error::Invalid(format!("link expiry: {e}")))?;
+            let request = client.get_object().bucket(&bucket).key(&key).presigned(config).await.map_err(map)?;
+            Ok(request.uri().to_owned())
         })
     }
 
