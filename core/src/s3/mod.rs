@@ -5,16 +5,21 @@
 //! every operation of a [`Session`] is spawned there and handed back as a [`Pending`], a plain future any executor
 //! can await, so tokio never runs inside GPUI's async code (see `docs/decisions/0001-*`).
 //!
+//! - [`access`]: what the profile's own IAM policies let it do, evaluated by [`policy`].
 //! - [`error`]: what a failure means.
 //! - [`names`]: bucket names, keys and metadata checked before they're sent.
 //! - `ops`: buckets, listings, metadata, rename, delete.
 //! - `transfer`: uploads, downloads and their progress.
 
+mod access;
 mod error;
 pub mod names;
 mod ops;
+pub mod policy;
+mod rgw_iam;
 mod transfer;
 
+pub use access::Access;
 pub use error::S3Error;
 pub use transfer::{Progress, local_path_for, walk};
 
@@ -72,9 +77,19 @@ impl Engine {
             if shared.region().is_none() {
                 config = config.region(Region::new(DEFAULT_REGION));
             }
+            let mut iam = aws_sdk_iam::config::Builder::from(&shared).interceptor(rgw_iam::DropResponseMetadata);
+            if shared.region().is_none() {
+                iam = iam.region(Region::new(DEFAULT_REGION));
+            }
             let endpoint = shared.endpoint_url().map(str::to_owned);
             tracing::info!(target: "r3manager::s3", profile = %name, endpoint = ?endpoint, "connected");
-            Ok(Session { client: aws_sdk_s3::Client::from_conf(config.build()), handle, profile: name, endpoint })
+            Ok(Session {
+                client: aws_sdk_s3::Client::from_conf(config.build()),
+                iam: aws_sdk_iam::Client::from_conf(iam.build()),
+                handle,
+                profile: name,
+                endpoint,
+            })
         }))
     }
 }
@@ -85,6 +100,8 @@ impl Engine {
 pub struct Session {
     /// The SDK's client.
     client: aws_sdk_s3::Client,
+    /// The IAM API on the same gateway, to read the profile's own policies.
+    iam: aws_sdk_iam::Client,
     /// Where operations are spawned.
     handle: tokio::runtime::Handle,
     /// The profile's name.

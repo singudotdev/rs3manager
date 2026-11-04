@@ -263,3 +263,25 @@ fn group_policies_decide_what_a_project_user_may_do() {
         wait(root.delete_bucket(bucket, true)).unwrap();
     }
 }
+
+#[test]
+#[ignore = "needs a radosgw: dev/test-rgw.sh"]
+fn a_project_user_reads_its_own_policies() {
+    use r3manager_core::s3::Access;
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Engine::new().unwrap();
+    let ro = wait(session_as(&engine, &dir.path().join("ro"), "R3M_TEST_PROD_RO").access()).unwrap();
+    let Access::Policies { user, groups, .. } = &ro else { panic!("policies read: {ro:?}") };
+    assert_eq!((user.as_str(), groups.len()), ("tester", 2), "{groups:?}");
+    assert!(ro.may("s3:PutObject", "r3mtest-web-prod", Some("a/b.txt")));
+    assert!(ro.may("s3:ListBucket", "r3mtest-web-prod", None));
+    assert!(!ro.may("s3:ListBucket", "legacy-prod", None));
+    assert_eq!(ro.bucket_patterns(), Some(vec![]), "no new buckets in prod");
+
+    let rw = wait(session_as(&engine, &dir.path().join("rw"), "R3M_TEST_DEV_RW").access()).unwrap();
+    assert_eq!(rw.bucket_patterns(), Some(vec!["r3mtest-*-dev".to_owned()]));
+    assert!(rw.may("s3:DeleteBucket", "r3mtest-x-dev", None) && !rw.may("s3:DeleteBucket", "r3mtest-x-prod", None));
+
+    let root = wait(session_as(&engine, &dir.path().join("root"), "R3M_TEST_PROD_ROOT").access()).unwrap();
+    assert!(matches!(root, Access::Root), "{root:?}");
+}

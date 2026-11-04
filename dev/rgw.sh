@@ -154,6 +154,17 @@ project() {
   done
   # Switching rw and ro takes the user out of the other group, which would otherwise still grant its rights.
   "${root[@]}" remove-user-from-group --user-name "$user" --group-name "$other" >/dev/null 2>&1 || true
+  # Reading its own policies lets r3manager show only what the user may do. radosgw refuses policy variables
+  # (${aws:username}) in IAM resources, so the ARNs are written out per user.
+  local id iam_arn
+  id=$(admin account get --account-name="$account" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+  iam_arn="arn:aws:iam::$id"
+  "${root[@]}" put-user-policy --user-name "$user" --policy-name read-own-policies --policy-document \
+    '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:GetUser","iam:ListGroupsForUser",
+      "iam:ListUserPolicies","iam:GetUserPolicy","iam:ListAttachedUserPolicies"],"Resource":"'"$iam_arn:user/$user"'"},
+      {"Effect":"Allow","Action":["iam:ListGroupPolicies","iam:GetGroupPolicy","iam:ListAttachedGroupPolicies"],
+      "Resource":["'"$iam_arn:group/read-write-objects"'","'"$iam_arn:group/$buckets"'"]}]}' >/dev/null \
+    || die "couldn't let $user read its own policies in $account"
   # Idempotent: the user's first key, its secret read back with radosgw-admin, else a new key.
   local key
   key=$("${root[@]}" list-access-keys --user-name "$user" --query 'AccessKeyMetadata[0].AccessKeyId' --output text)
