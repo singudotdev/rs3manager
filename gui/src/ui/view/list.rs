@@ -38,6 +38,16 @@ impl Root {
             let hint = if self.session.is_some() { "Pick a bucket on the left, or create one." } else { "" };
             return base.child(empty(theme, "No bucket open", hint));
         }
+        if !self.open_bucket_listable() {
+            let bucket = self.browser.bucket().unwrap_or_default();
+            return base.child(empty(
+                theme,
+                "No access to this bucket",
+                &format!(
+                    "This profile's policies don't let it see what's in {bucket}. Ask your platform team if you need it."
+                ),
+            ));
+        }
         let count = self.browser.len();
         let all = count > 0 && self.browser.selection().len() == count;
         let dated = !super::compact(window);

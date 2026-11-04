@@ -35,6 +35,14 @@ fn files(dir: &Path) -> Files {
     files
 }
 
+/// AWS files in `dir` with profile `test` holding the keys `dev/test-rgw.sh` exports under `prefix`.
+fn files_as(dir: &Path, prefix: &str) -> Files {
+    let files = Files::in_dir(dir);
+    let (key, secret) = (env(&format!("{prefix}_ACCESS_KEY")), env(&format!("{prefix}_SECRET_KEY")));
+    files.save(None, &ProfileEdit::new("test", &env("R3M_TEST_ENDPOINT"), "", &key, &secret).unwrap()).unwrap();
+    files
+}
+
 /// A test's own bucket, deleted with what's in it when the test ends, passed or failed, so runs don't pile buckets up
 /// in the test account (pushing a new one out of the sidebar's sight).
 struct TestBucket {
@@ -304,4 +312,46 @@ fn profiles_are_added_and_switched_in_the_dialog(cx: &mut TestAppContext) {
     assert_eq!(names, ["test", "second"]);
     let config = std::fs::read_to_string(&files.config).unwrap();
     assert!(config.contains("[profile second]\nendpoint_url = "), "{config}");
+}
+
+#[gpui::test]
+#[ignore = "needs a radosgw: dev/test-rgw.sh"]
+fn what_the_policies_deny_is_shown_and_explained(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Engine::new().unwrap();
+    let root: Session =
+        wait(engine.connect(&files_as(&dir.path().join("root"), "R3M_TEST_PROD_ROOT"), "test")).unwrap();
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+    let (ours, theirs) = (format!("r3mtest-ui{stamp}-prod"), format!("aa-ui{stamp}-prod"));
+    let guards: Vec<_> = [&ours, &theirs]
+        .into_iter()
+        .map(|name| {
+            wait(root.create_bucket(name)).unwrap();
+            TestBucket { name: name.clone(), session: root.clone(), _engine: Engine::new().unwrap() }
+        })
+        .collect();
+    let (view, cx) = window(cx, files_as(&dir.path().join("ro"), "R3M_TEST_PROD_RO"));
+
+    let listable = |r: &Root, name: &str| r.buckets.iter().find(|b| b.name == name).map(|b| b.listable);
+    view.read_with(cx, |r, _| assert_eq!((listable(r, &ours), listable(r, &theirs)), (Some(true), Some(false))));
+    click(cx, &format!("bucket {theirs}"));
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |r, _| !r.open_bucket_listable() && r.notice.is_none()), "explained in place");
+    assert!(cx.debug_bounds("button Upload files").is_none(), "nothing to do in a bucket out of reach");
+
+    // Read-only buckets: creating one is refused in the dialog, saying it's the policies.
+    click(cx, "button New");
+    let input = view.read_with(cx, |r, _| match &r.modal {
+        Some(Modal::Prompt { input, .. }) => input.clone(),
+        _ => panic!("the name dialog is open"),
+    });
+    type_into(cx, &input, &format!("r3mtest-new{stamp}-prod"));
+    cx.simulate_keystrokes("enter");
+    until(
+        cx,
+        &view,
+        "the refusal",
+        |r| matches!(&r.modal, Some(Modal::Prompt { error: Some(e), busy: false, .. }) if e.contains("policies don't allow creating")),
+    );
+    drop(guards);
 }

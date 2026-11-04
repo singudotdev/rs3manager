@@ -12,8 +12,9 @@ pub enum S3Error {
     /// The keys aren't the gateway's (unknown access key, wrong secret, clock far off).
     #[error("the gateway rejected the profile's keys: {0}")]
     BadCredentials(String),
-    /// The account may not do this.
-    #[error("access denied: {0}")]
+    /// The profile's policies (or the bucket's) don't allow this. radosgw sends no reason, so the text is usually
+    /// empty.
+    #[error("not allowed by this profile's policies{}", if .0.is_empty() { String::new() } else { format!(" ({})", .0) })]
     AccessDenied(String),
     /// The bucket or object isn't there (any more).
     #[error("not found: {0}")]
@@ -94,7 +95,9 @@ fn by_code(code: &str, message: String) -> S3Error {
     let message = if message.is_empty() { code.to_owned() } else { message };
     match code {
         "NoSuchBucket" | "NoSuchKey" | "NoSuchUpload" | "NotFound" | "NoSuchVersion" => S3Error::NotFound(message),
-        "AccessDenied" | "AllAccessDisabled" => S3Error::AccessDenied(message),
+        "AccessDenied" | "AllAccessDisabled" => {
+            S3Error::AccessDenied(if message == code { String::new() } else { message })
+        }
         "InvalidAccessKeyId" | "SignatureDoesNotMatch" | "RequestTimeTooSkewed" | "ExpiredToken" | "InvalidToken" => {
             S3Error::BadCredentials(message)
         }
@@ -128,5 +131,7 @@ mod tests {
         assert!(matches!(by_code("SlowDown", "busy".into()), S3Error::Service { code, .. } if code == "SlowDown"));
         assert!(matches!(by_status(Some(404), String::new()), S3Error::NotFound(_)));
         assert!(matches!(by_status(None, String::new()), S3Error::Network(_)));
+        // radosgw denies with no message: the text says why without repeating the code.
+        assert_eq!(by_code("AccessDenied", String::new()).to_string(), "not allowed by this profile's policies");
     }
 }

@@ -10,7 +10,10 @@ use super::{size, time};
 use aws_sdk_s3::Client;
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, MetadataDirective, ObjectIdentifier};
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
 /// The largest object `CopyObject` copies in one request; larger ones are copied in parts.
 const COPY_LIMIT: u64 = 5 * 1024 * 1024 * 1024;
@@ -45,6 +48,7 @@ impl Session {
                 buckets.extend(out.buckets().iter().map(|b| Bucket {
                     name: b.name().unwrap_or_default().to_owned(),
                     created: time(b.creation_date()),
+                    listable: true,
                 }));
                 token = out.continuation_token().map(str::to_owned);
                 if token.is_none() {
@@ -52,12 +56,15 @@ impl Session {
                 }
             }
             buckets.sort_by(|a, b| a.name.cmp(&b.name));
+            mark_unlistable(&client, &mut buckets).await;
             Ok(buckets)
         })
     }
 
     /// Creates bucket `name`, checked against S3's naming rules first. A name already taken is refused even when the
-    /// account owns it, which radosgw (like AWS in us-east-1) would otherwise answer with success.
+    /// account owns it, which radosgw (like AWS in us-east-1) would otherwise answer with success. radosgw answers the
+    /// check with 404 for a name nobody has, before looking at policies, so a 403 means it exists out of the profile's
+    /// reach; a name the policies don't allow is refused by the create itself.
     pub fn create_bucket(&self, name: &str) -> Pending<()> {
         let name = name.to_owned();
         self.spawn(|client| async move {
@@ -473,6 +480,33 @@ async fn abort_uploads(client: &Client, bucket: &str) -> Result<(), S3Error> {
         }
         key_marker = page.next_key_marker().map(str::to_owned);
         id_marker = page.next_upload_id_marker().map(str::to_owned);
+    }
+}
+
+/// How many buckets are checked at once by [`mark_unlistable`].
+const ACCESS_CHECKS: usize = 8;
+
+/// Marks the buckets the profile may not list. `ListBuckets` shows an account user every bucket of the account,
+/// including those their policies keep them out of; one listing of a single key per bucket tells them apart. Any
+/// answer but a denial leaves the bucket listable, so a slow or failing gateway never hides one.
+async fn mark_unlistable(client: &Client, buckets: &mut [Bucket]) {
+    let limit = Arc::new(Semaphore::new(ACCESS_CHECKS));
+    let mut checks = JoinSet::new();
+    for (i, bucket) in buckets.iter().enumerate() {
+        let (client, name, limit) = (client.clone(), bucket.name.clone(), Arc::clone(&limit));
+        checks.spawn(async move {
+            let _permit = limit.acquire_owned().await;
+            let denied = matches!(
+                client.list_objects_v2().bucket(&name).max_keys(1).send().await.map_err(map),
+                Err(S3Error::AccessDenied(_))
+            );
+            (i, denied)
+        });
+    }
+    while let Some(joined) = checks.join_next().await {
+        if let Ok((i, true)) = joined {
+            buckets[i].listable = false;
+        }
     }
 }
 

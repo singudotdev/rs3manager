@@ -214,3 +214,52 @@ fn uploads_learn_which_keys_they_would_replace() {
     assert_eq!(existing, ["top.txt", "a/b.txt", "a/deep/c.txt"]);
     wait(session.delete_bucket(&bucket, true)).unwrap();
 }
+
+/// A session as the identity whose keys `dev/test-rgw.sh` exports under `prefix`.
+fn session_as(engine: &Engine, dir: &Path, prefix: &str) -> Session {
+    let files = Files::in_dir(dir);
+    let (key, secret) = (env(&format!("{prefix}_ACCESS_KEY")), env(&format!("{prefix}_SECRET_KEY")));
+    files.save(None, &ProfileEdit::new("p", &env("R3M_TEST_ENDPOINT"), "", &key, &secret).unwrap()).unwrap();
+    wait(engine.connect(&files, "p")).unwrap()
+}
+
+#[test]
+#[ignore = "needs a radosgw: dev/test-rgw.sh"]
+fn group_policies_decide_what_a_project_user_may_do() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Engine::new().unwrap();
+    let (root, ro, rw) = (
+        session_as(&engine, &dir.path().join("root"), "R3M_TEST_PROD_ROOT"),
+        session_as(&engine, &dir.path().join("ro"), "R3M_TEST_PROD_RO"),
+        session_as(&engine, &dir.path().join("rw"), "R3M_TEST_DEV_RW"),
+    );
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+    let (ours, theirs) = (format!("r3mtest-{stamp}-prod"), format!("legacy-{stamp}-prod"));
+    for bucket in [&ours, &theirs] {
+        wait(root.create_bucket(bucket)).unwrap();
+        put(&root, bucket, dir.path(), "f.txt", b"x", Headers::default());
+    }
+
+    // Production, read-only buckets: every bucket of the account is listed, those out of reach marked.
+    let buckets = wait(ro.list_buckets()).unwrap();
+    let listable = |name: &str| buckets.iter().find(|b| b.name == name).map(|b| b.listable);
+    assert_eq!((listable(&ours), listable(&theirs)), (Some(true), Some(false)));
+    let denied = |r: Result<(), S3Error>| matches!(r, Err(S3Error::AccessDenied(_)));
+    assert!(denied(wait(ro.create_bucket(&format!("r3mtest-new-{stamp}-prod")))), "no new buckets in prod");
+    assert!(denied(wait(ro.delete_bucket(&ours, false))));
+    put(&ro, &ours, dir.path(), "mine.txt", b"objects are read-write", Headers::default());
+    assert_eq!(wait(ro.delete(&ours, vec!["mine.txt".into()])).unwrap().deleted, 1);
+    assert!(matches!(wait(ro.list(&theirs, "", None)), Err(S3Error::AccessDenied(_))));
+
+    // Development, read-write buckets, but only under the project's names: a refused name is a refusal, not "taken";
+    // a bucket of the account out of the user's reach is taken.
+    let mine = format!("r3mtest-{stamp}-dev");
+    wait(rw.create_bucket(&mine)).unwrap();
+    assert!(denied(wait(rw.create_bucket(&format!("elsewhere-{stamp}-dev")))), "names outside r3mtest-*-dev");
+    assert!(matches!(wait(rw.create_bucket(&theirs)), Err(S3Error::BucketExists)), "taken in another account");
+    wait(rw.delete_bucket(&mine, false)).unwrap();
+
+    for bucket in [&ours, &theirs] {
+        wait(root.delete_bucket(bucket, true)).unwrap();
+    }
+}

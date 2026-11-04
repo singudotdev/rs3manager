@@ -169,9 +169,21 @@ impl Root {
         self.list(generation, None, cx);
     }
 
-    /// Lists a page of the open folder for `generation`, from `token`.
+    /// Whether the open bucket (if any) may be listed by the profile, as last checked.
+    pub fn open_bucket_listable(&self) -> bool {
+        let open = self.browser.bucket();
+        self.buckets.iter().find(|b| Some(b.name.as_str()) == open).is_none_or(|b| b.listable)
+    }
+
+    /// Lists a page of the open folder for `generation`, from `token`. A bucket the profile can't list isn't asked:
+    /// the list says so in place of rows.
     fn list(&mut self, generation: u64, token: Option<String>, cx: &mut Context<Self>) {
         let Some(bucket) = self.browser.bucket().map(str::to_owned) else { return };
+        if !self.open_bucket_listable() {
+            self.browser.failed(generation);
+            cx.notify();
+            return;
+        }
         let prefix = self.browser.prefix().to_owned();
         let first = token.is_none();
         let (b, p) = (bucket.clone(), prefix.clone());
@@ -182,6 +194,13 @@ impl Root {
                 Ok(page) => {
                     if this.browser.loaded(generation, first, page) {
                         this.sync_details(cx);
+                    }
+                }
+                // The bucket's top denied: its access changed since the buckets were listed.
+                Err(S3Error::AccessDenied(_)) if prefix.is_empty() => {
+                    this.browser.failed(generation);
+                    if let Some(b) = this.buckets.iter_mut().find(|b| b.name == bucket) {
+                        b.listable = false;
                     }
                 }
                 Err(e) => {
@@ -540,7 +559,15 @@ impl Root {
                             this.info(format!("Created bucket {name}"), cx);
                             this.load_buckets(cx);
                         }
-                        Err(e) => this.prompt_failed(&e, cx),
+                        // Accounts commonly limit the names a user may create, e.g. to project-name-env.
+                        Err(S3Error::AccessDenied(_)) => this.prompt_failed(
+                            format!(
+                                "This profile's policies don't allow creating {name}. They may allow only some names \
+                                 (often a pattern such as project-name-env), or no new buckets at all."
+                            ),
+                            cx,
+                        ),
+                        Err(e) => this.prompt_failed(e.to_string(), cx),
                     },
                 );
             }
@@ -555,7 +582,7 @@ impl Root {
                             this.prompt_done(cx);
                             this.reload_folder(cx);
                         }
-                        Err(e) => this.prompt_failed(&e, cx),
+                        Err(e) => this.prompt_failed(e.to_string(), cx),
                     },
                 );
             }
@@ -573,7 +600,7 @@ impl Root {
                                     this.prompt_done(cx);
                                     this.reload_folder(cx);
                                 }
-                                Err(e) => this.prompt_failed(&e, cx),
+                                Err(e) => this.prompt_failed(e.to_string(), cx),
                             },
                         );
                     }
@@ -588,7 +615,7 @@ impl Root {
                                     this.info(format!("Moved {n} object{}", if n == 1 { "" } else { "s" }), cx);
                                     this.reload_folder(cx);
                                 }
-                                Err(e) => this.prompt_failed(&e, cx),
+                                Err(e) => this.prompt_failed(e.to_string(), cx),
                             },
                         );
                     }
@@ -612,12 +639,12 @@ impl Root {
     }
 
     /// Keeps the name dialog open with why the gateway refused the name, to fix it.
-    fn prompt_failed(&mut self, e: &S3Error, cx: &mut Context<Self>) {
+    fn prompt_failed(&mut self, why: String, cx: &mut Context<Self>) {
         if let Some(Modal::Prompt { busy, error, .. }) = &mut self.modal {
             *busy = false;
-            *error = Some(e.to_string().into());
+            *error = Some(why.into());
         } else {
-            self.error(e.to_string(), cx);
+            self.error(why, cx);
         }
     }
 

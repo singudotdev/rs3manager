@@ -138,6 +138,9 @@ pub struct Bucket {
     pub name: String,
     /// When it was created.
     pub created: Option<SystemTime>,
+    /// Whether the profile may list what's in it: an account's users see every bucket of the account, also those their
+    /// policies keep them out of.
+    pub listable: bool,
 }
 
 /// An object in a listing.

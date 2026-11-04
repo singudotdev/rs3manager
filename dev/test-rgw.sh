@@ -10,5 +10,16 @@ R3M_TEST_ENDPOINT=$(sed -n 's/^endpoint_url = //p' <<<"$profile")
 R3M_TEST_ACCESS_KEY=$(sed -n 's/^aws_access_key_id = //p' <<<"$profile")
 R3M_TEST_SECRET_KEY=$(sed -n 's/^aws_secret_access_key = //p' <<<"$profile")
 export R3M_TEST_ENDPOINT R3M_TEST_ACCESS_KEY R3M_TEST_SECRET_KEY
+# A project's accounts as teams set them up: tester may only read buckets in prod and manage them in dev, objects in
+# both, and only buckets named r3mtest-*-ENV.
+keys() { # PREFIX < profile: exports PREFIX_ACCESS_KEY and PREFIX_SECRET_KEY
+  local profile
+  profile=$(cat)
+  export "$1_ACCESS_KEY=$(sed -n 's/^aws_access_key_id = //p' <<<"$profile")"
+  export "$1_SECRET_KEY=$(sed -n 's/^aws_secret_access_key = //p' <<<"$profile")"
+}
+keys R3M_TEST_PROD_ROOT < <(dev/rgw.sh account r3mtest-prod)
+keys R3M_TEST_PROD_RO < <(dev/rgw.sh project r3mtest prod tester ro)
+keys R3M_TEST_DEV_RW < <(dev/rgw.sh project r3mtest dev tester rw)
 cargo test -p r3manager-core --test rgw -- --ignored "$@"
 cargo test -p r3manager-app -- --ignored "$@"

@@ -45,6 +45,7 @@ impl Root {
         let rows = self.buckets.iter().enumerate().map(|(i, bucket)| {
             let name = bucket.name.clone();
             let selected = open.as_deref() == Some(name.as_str());
+            let listable = bucket.listable;
             div()
                 .id(("bucket", i))
                 .flex()
@@ -57,7 +58,15 @@ impl Root {
                 .when(selected, |d| d.bg(theme.selected))
                 .when(!selected, |d| d.hover(|s| s.bg(theme.hover)))
                 .child(mark(true, theme))
-                .child(div().truncate().child(name.clone()))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .when(!listable, |d| d.text_color(theme.muted))
+                        .child(name.clone()),
+                )
+                .when(!listable, |d| d.child(div().flex_none().text_xs().text_color(theme.muted).child("no access")))
                 .debug_selector(|| format!("bucket {name}"))
                 .on_click(cx.listener(move |this, _, window, cx| this.open_bucket(&name, window, cx)))
         });
@@ -114,6 +123,7 @@ impl Root {
         };
         let prefix = self.browser.prefix().to_owned();
         let selected = self.browser.selection().len();
+        let listable = self.open_bucket_listable();
         let mut path = div().flex().items_center().gap_1().min_w_0().overflow_hidden().child(
             crumb("crumb-top", &bucket, prefix.is_empty(), theme).on_click(cx.listener({
                 let bucket = bucket.clone();
@@ -192,7 +202,9 @@ impl Root {
                     .child(path.flex_1())
                     .child(div().w(px(200.)).flex_none().child(self.filter.clone())),
             )
-            .child(actions.children(bucket_actions.map(|b| div().flex_1().flex().justify_end().child(b))))
+            .when(listable, |d| {
+                d.child(actions.children(bucket_actions.map(|b| div().flex_1().flex().justify_end().child(b))))
+            })
     }
 }
 
