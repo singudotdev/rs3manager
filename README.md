@@ -36,6 +36,11 @@ expires, and it can't be revoked before then short of changing those keys.
 On the Ceph side, `dev/rgw.sh account NAME` creates an account and its root user and prints that profile; on a cluster
 node run it as `RGW_ADMIN=radosgw-admin RGW_ENDPOINT=https://s3.example.com dev/rgw.sh account NAME`.
 
+`dev/rgw.sh project PROJECT ENV USER rw|ro` sets up an account the way teams split them: account `PROJECT-ENV` (root
+user `PROJECT-ENV-root`), groups `read-write-objects`, `read-only-buckets` and `read-write-buckets` whose policies cover
+only buckets named `PROJECT-*-ENV`, and IAM user `USER` in `read-write-objects` plus the `rw` or `ro` buckets group;
+it prints USER's profile. Its policies are drafts in the script, to swap for the ones production enforces.
+
 ## Keys
 
 | Key | Does |
