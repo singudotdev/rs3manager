@@ -9,6 +9,7 @@ use super::{Headers, ObjectEntry, Pending, S3Error, Session, size, time};
 use aws_sdk_s3::Client;
 use aws_sdk_s3::primitives::{ByteStream, Length};
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
+use std::collections::{BTreeSet, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -128,6 +129,46 @@ impl Session {
                 let _ = tokio::fs::remove_file(&partial).await;
             }
             result
+        })
+    }
+    /// Which of `keys` already exist in `bucket`, so an upload can ask before replacing them (S3 replaces silently).
+    /// One listing per folder the keys go into, not a request per key; a folder found empty skips every folder below
+    /// it, so a new folder tree costs one listing. Keys written by someone else after this answered aren't seen.
+    pub fn existing(&self, bucket: &str, keys: Vec<String>) -> Pending<Vec<String>> {
+        let bucket = bucket.to_owned();
+        self.spawn(|client| async move {
+            let folders: BTreeSet<&str> = keys.iter().map(|k| k.rfind('/').map_or("", |i| &k[..=i])).collect();
+            let mut found = HashSet::new();
+            let mut empty: Vec<&str> = Vec::new();
+            // Sorted, so a folder comes before the folders below it.
+            for folder in folders {
+                if empty.iter().any(|e| folder.starts_with(e)) {
+                    continue;
+                }
+                let mut token = None;
+                let mut anything = false;
+                loop {
+                    let page = client
+                        .list_objects_v2()
+                        .bucket(&bucket)
+                        .prefix(folder)
+                        .delimiter("/")
+                        .set_continuation_token(token)
+                        .send()
+                        .await
+                        .map_err(map)?;
+                    anything |= !page.contents().is_empty() || !page.common_prefixes().is_empty();
+                    found.extend(page.contents().iter().filter_map(|o| o.key().map(str::to_owned)));
+                    token = page.next_continuation_token().map(str::to_owned);
+                    if token.is_none() {
+                        break;
+                    }
+                }
+                if !anything && !folder.is_empty() {
+                    empty.push(folder);
+                }
+            }
+            Ok(keys.iter().filter(|k| found.contains(k.as_str())).cloned().collect())
         })
     }
 

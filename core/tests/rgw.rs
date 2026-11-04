@@ -201,3 +201,16 @@ fn shared_links_download_without_credentials_until_they_expire() {
     assert!(matches!(wait(session.share(&bucket, key, week_and_a_bit)), Err(S3Error::Invalid(_))));
     wait(session.delete_bucket(&bucket, true)).unwrap();
 }
+
+#[test]
+#[ignore = "needs a radosgw: dev/test-rgw.sh"]
+fn uploads_learn_which_keys_they_would_replace() {
+    let (_engine, session, bucket, dir) = setup("existing");
+    for key in ["top.txt", "a/b.txt", "a/deep/c.txt"] {
+        put(&session, &bucket, dir.path(), key, b"x", Headers::default());
+    }
+    let keys = ["top.txt", "new.txt", "a/b.txt", "a/new.txt", "a/deep/c.txt", "fresh/deep/x.txt", "a/deeper/y"];
+    let existing = wait(session.existing(&bucket, keys.iter().map(|k| (*k).to_owned()).collect())).unwrap();
+    assert_eq!(existing, ["top.txt", "a/b.txt", "a/deep/c.txt"]);
+    wait(session.delete_bucket(&bucket, true)).unwrap();
+}

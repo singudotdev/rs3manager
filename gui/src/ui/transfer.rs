@@ -1,11 +1,11 @@
 //! Uploads and downloads from the window: the file pickers, files dropped on it, and the queue that runs a few at a
 //! time on the session, redrawing their progress while any runs.
 
-use super::root::Root;
+use super::root::{Modal, Root};
 use crate::state::browser::Row;
 use crate::state::format::{base_name, key_in};
 use crate::state::transfers::{Job, Status};
-use gpui::{AsyncApp, Context, PathPromptOptions, WeakEntity};
+use gpui::{AsyncApp, Context, PathPromptOptions, WeakEntity, Window};
 use r3manager_core::s3::names::content_type_for;
 use r3manager_core::s3::{Headers, local_path_for, walk};
 use std::path::{Path, PathBuf};
@@ -92,10 +92,46 @@ impl Root {
                 if let Some(e) = errors.first() {
                     this.error(format!("Couldn't read {e}"), cx);
                 }
-                this.queue(jobs, cx);
+                this.ask_before_replacing(jobs, cx);
             });
         })
         .detach();
+    }
+
+    /// Queues `jobs`, uploads into one bucket, once the developer has chosen what to do with those that would
+    /// replace an object: S3 overwrites without a word, and a lost object is gone unless the bucket keeps versions.
+    fn ask_before_replacing(&mut self, jobs: Vec<Job>, cx: &mut Context<Self>) {
+        let Some(Job::Upload { bucket, .. }) = jobs.first() else { return };
+        let bucket = bucket.clone();
+        let keys = jobs.iter().filter_map(|j| if let Job::Upload { key, .. } = j { Some(key.clone()) } else { None });
+        let keys = keys.collect();
+        self.run(
+            cx,
+            move |s| s.existing(&bucket, keys),
+            |this, result, cx| match result {
+                Ok(existing) if existing.is_empty() => this.queue(jobs, cx),
+                Ok(existing) => this.modal = Some(Modal::Replace { jobs, existing }),
+                Err(e) => this.error(format!("Couldn't check what the upload would replace: {e}"), cx),
+            },
+        );
+    }
+
+    /// Runs the uploads of the replace dialog: all of them when `replace`, else only those of new keys.
+    pub fn replace_chosen(&mut self, replace: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(Modal::Replace { jobs, existing }) = self.modal.take() else { return };
+        self.close_modal(window, cx);
+        if replace {
+            self.queue(jobs, cx);
+            return;
+        }
+        let fresh: Vec<Job> =
+            jobs.into_iter().filter(|j| !matches!(j, Job::Upload { key, .. } if existing.contains(key))).collect();
+        if fresh.is_empty() {
+            self.info("Nothing uploaded: every file is already there", cx);
+        } else {
+            self.info(format!("Skipped {} file(s) already there", existing.len()), cx);
+            self.queue(fresh, cx);
+        }
     }
 
     /// Downloads the selected rows: one object to a file picked by name; anything else into a folder picked, keeping

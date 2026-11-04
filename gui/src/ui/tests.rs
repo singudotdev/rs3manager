@@ -98,6 +98,7 @@ fn until(cx: &mut VisualTestContext, view: &Entity<Root>, what: &str, done: impl
             Some(Modal::Confirm { title, .. }) => format!("confirm {title}"),
             Some(Modal::Profiles(_)) => "profiles".to_owned(),
             Some(Modal::Share(_)) => "share".to_owned(),
+            Some(Modal::Replace { .. }) => "replace".to_owned(),
             None => "none".to_owned(),
         };
         let rows: Vec<_> = root.browser.rows().map(|r| r.key().to_owned()).collect();
@@ -240,11 +241,41 @@ fn creating_renaming_and_deleting_from_the_window(cx: &mut TestAppContext) {
     let local = dir.path().join("dropped");
     std::fs::create_dir_all(local.join("sub")).unwrap();
     std::fs::write(local.join("sub/a.json"), "{}").unwrap();
-    view.update(cx, |r, cx| r.upload_paths(vec![local], cx));
+    view.update(cx, |r, cx| r.upload_paths(vec![local.clone()], cx));
     until(cx, &view, "the upload", |r| !r.transfers.busy() && r.browser.rows().any(|row| row.key() == "dropped/"));
     let row = view.read_with(cx, |r, _| r.transfers.items()[0].status.clone());
     assert_eq!(row, crate::state::transfers::Status::Done);
     assert!(matches!(view.read_with(cx, |r, _| r.browser.row(0).cloned()), Some(Row::Folder(_))));
+
+    // The same folder again, with a new file: it asks before replacing, and enter skips what's there.
+    std::fs::write(local.join("sub/b.json"), "{}").unwrap();
+    view.update(cx, |r, cx| r.upload_paths(vec![local.clone()], cx));
+    until(
+        cx,
+        &view,
+        "the replace question",
+        |r| matches!(&r.modal, Some(Modal::Replace { existing, .. }) if existing == &["dropped/sub/a.json"]),
+    );
+    cx.simulate_keystrokes("enter");
+    until(cx, &view, "the new file", |r| r.modal.is_none() && !r.transfers.busy() && r.transfers.items().len() == 2);
+    let uploaded = |r: &Root| match &r.transfers.items().last().unwrap().job {
+        crate::state::transfers::Job::Upload { key, .. } => key.clone(),
+        crate::state::transfers::Job::Download { .. } => panic!("an upload"),
+    };
+    assert_eq!(view.read_with(cx, |r, _| uploaded(r)), "dropped/sub/b.json");
+
+    // Replace uploads them all.
+    view.update(cx, |r, cx| r.upload_paths(vec![local], cx));
+    until(
+        cx,
+        &view,
+        "the replace question",
+        |r| matches!(&r.modal, Some(Modal::Replace { existing, .. }) if existing.len() == 2),
+    );
+    click(cx, "button Replace");
+    until(cx, &view, "the replacements", |r| !r.transfers.busy() && r.transfers.items().len() == 4);
+    let statuses: Vec<_> = view.read_with(cx, |r, _| r.transfers.items().iter().map(|t| t.status.clone()).collect());
+    assert!(statuses.iter().all(|s| *s == crate::state::transfers::Status::Done), "{statuses:?}");
 }
 
 #[gpui::test]

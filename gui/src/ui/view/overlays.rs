@@ -133,6 +133,47 @@ impl Root {
             Modal::Profiles(ProfilesDialog { form: Some(form) }) => Self::profile_form(form, theme, cx),
             Modal::Profiles(ProfilesDialog { form: None }) => self.profile_list(theme, cx),
             Modal::Share(dialog) => Self::share_dialog(dialog, theme, cx),
+            Modal::Replace { existing, .. } => {
+                const SHOWN: usize = 6;
+                let count = existing.len();
+                let title = if count == 1 {
+                    format!("Replace {}?", base_name(&existing[0]))
+                } else {
+                    format!("Replace {count} objects?")
+                };
+                let names = existing.iter().take(SHOWN).map(|k| div().truncate().child(k.clone()));
+                let more = (count > SHOWN).then(|| format!("and {} more", count - SHOWN));
+                card(theme, 480.)
+                    .child(heading(title.into()))
+                    .child(div().text_color(theme.muted).child(if count == 1 {
+                        "An object with this name is already there. Replacing it can't be undone.".to_owned()
+                    } else {
+                        "These are already there. Replacing them can't be undone.".to_owned()
+                    }))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_0p5()
+                            .font_family(MONO)
+                            .text_xs()
+                            .children(names)
+                            .children(more.map(|m| div().text_color(theme.muted).child(m))),
+                    )
+                    .child(
+                        footer()
+                            .child(cancel(theme, cx))
+                            .child(
+                                button("replace", "Replace", Kind::Danger, false, theme)
+                                    .on_click(cx.listener(|this, _, window, cx| this.replace_chosen(true, window, cx))),
+                            )
+                            .child(
+                                button("skip", "Skip existing", Kind::Primary, false, theme).on_click(
+                                    cx.listener(|this, _, window, cx| this.replace_chosen(false, window, cx)),
+                                ),
+                            ),
+                    )
+            }
         };
         Some(div().absolute().inset_0().flex().items_center().justify_center().bg(theme.scrim).occlude().child(content))
     }

@@ -37,6 +37,7 @@ impl Root {
             }
             Some(Modal::Profiles(ProfilesDialog { form: Some(_) })) => self.save_profile(cx),
             Some(Modal::Share(_)) => self.copy_share_link(cx),
+            Some(Modal::Replace { .. }) => self.replace_chosen(false, window, cx),
             Some(Modal::Profiles(ProfilesDialog { form: None })) | None => {}
         }
     }

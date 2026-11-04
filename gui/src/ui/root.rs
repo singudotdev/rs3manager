@@ -7,7 +7,7 @@ use super::input::{Changed, TextInput};
 use super::profiles::ProfilesDialog;
 use super::share::ShareDialog;
 use crate::state::browser::{Browser, Row};
-use crate::state::transfers::Transfers;
+use crate::state::transfers::{Job, Transfers};
 use gpui::{
     AppContext as _, AsyncApp, Context, Entity, FocusHandle, Focusable as _, SharedString, Subscription,
     UniformListScrollHandle, WeakEntity, Window,
@@ -47,6 +47,13 @@ pub enum Modal {
     Profiles(ProfilesDialog),
     /// A download link to an object.
     Share(ShareDialog),
+    /// Uploads that would replace objects already there: replace them, skip them, or upload nothing.
+    Replace {
+        /// Every upload asked for.
+        jobs: Vec<Job>,
+        /// The keys among them that already exist.
+        existing: Vec<String>,
+    },
 }
 
 /// What a confirmation does.
