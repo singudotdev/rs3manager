@@ -20,7 +20,7 @@ const WHEN_W: f32 = 140.;
 
 impl Root {
     /// The rows of the open folder, or what to do when there's none.
-    pub(super) fn rows(&mut self, theme: &Theme, cx: &mut Context<Self>) -> Div {
+    pub(super) fn rows(&mut self, theme: &Theme, window: &gpui::Window, cx: &mut Context<Self>) -> Div {
         let base = div().flex().flex_col().flex_1().min_h_0();
         if self.profile.is_none() {
             return base.child(
@@ -40,6 +40,7 @@ impl Root {
         }
         let count = self.browser.len();
         let all = count > 0 && self.browser.selection().len() == count;
+        let dated = !super::compact(window);
         let header = div()
             .debug_selector(|| "rows header".to_owned())
             .flex()
@@ -58,7 +59,7 @@ impl Root {
             })))
             .child(div().flex_1().child("Name"))
             .child(div().w(px(SIZE_W)).text_right().child("Size"))
-            .child(div().w(px(WHEN_W)).child("Modified"));
+            .when(dated, |d| d.child(div().w(px(WHEN_W)).child("Modified")));
         let body = if count == 0 && !self.browser.loading() {
             empty(theme, "This folder is empty", "Drop files here, or use Upload, to add some.")
         } else {
@@ -96,12 +97,14 @@ impl Root {
     ) -> Vec<Stateful<Div>> {
         let theme = super::super::theme::of(window);
         range
-            .filter_map(|index| self.browser.row(index).cloned().map(|row| self.row(index, &row, &theme, cx)))
+            .filter_map(|index| {
+                self.browser.row(index).cloned().map(|row| self.row(index, &row, &theme, !super::compact(window), cx))
+            })
             .collect()
     }
 
-    /// Row `index`.
-    fn row(&self, index: usize, row: &Row, theme: &Theme, cx: &mut Context<Self>) -> Stateful<Div> {
+    /// Row `index`, its Modified column only when `dated`.
+    fn row(&self, index: usize, row: &Row, theme: &Theme, dated: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         let selected = self.browser.is_selected(row.key());
         let name = name_in(row.key(), self.browser.prefix()).to_owned();
         let (size_text, when_text) = match row {
@@ -109,9 +112,9 @@ impl Root {
             Row::Object(o) => (size(o.size), o.modified.map(when).unwrap_or_default()),
         };
         let folder = matches!(row, Row::Folder(_));
-        let selector = {
-            let name = name.clone();
-            move || format!("row {name}")
+        let (selector, name_selector) = {
+            let (a, b) = (name.clone(), name.clone());
+            (move || format!("row {a}"), move || format!("name {b}"))
         };
         div()
             .id(("row", index))
@@ -136,13 +139,14 @@ impl Root {
                     .gap_2()
                     .flex_1()
                     .min_w_0()
+                    .debug_selector(name_selector)
                     .child(mark(folder, theme))
                     .child(div().truncate().child(name)),
             )
             .child(
                 div().w(px(SIZE_W)).text_right().font_family(MONO).text_xs().text_color(theme.muted).child(size_text),
             )
-            .child(div().w(px(WHEN_W)).text_xs().text_color(theme.muted).child(when_text))
+            .when(dated, |d| d.child(div().w(px(WHEN_W)).text_xs().text_color(theme.muted).child(when_text)))
             .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
                 let modifiers = event.modifiers();
                 if event.click_count() >= 2 && !folder && !modifiers.secondary() && !modifiers.shift {

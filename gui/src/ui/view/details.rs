@@ -5,14 +5,19 @@ use super::super::root::Root;
 use super::super::theme::{MONO, Theme};
 use super::super::widgets::{Kind, button, label};
 use crate::state::format::{base_name, size, when};
-use gpui::{Context, Div, ObjectFit, Stateful, StyledImage as _, div, img, prelude::*, px};
+use gpui::{Context, Div, ObjectFit, Stateful, StyledImage as _, Window, div, img, prelude::*, px};
 
-/// The panel's width.
-const WIDTH: f32 = 340.;
+/// The panel's width, and in the compact layout.
+const WIDTH: (f32, f32) = (340., 300.);
 
 impl Root {
     /// The panel, when one object is selected.
-    pub(super) fn details_pane(&mut self, theme: &Theme, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
+    pub(super) fn details_pane(
+        &mut self,
+        theme: &Theme,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Option<Stateful<Div>> {
         let details = self.details.as_ref()?;
         let facts = details.info.as_ref().map(|info| {
             let mut rows = vec![("Size", format!("{} ({} bytes)", size(info.size), info.size))];
@@ -68,7 +73,7 @@ impl Root {
                 .flex()
                 .flex_col()
                 .gap_4()
-                .w(px(WIDTH))
+                .w(px(if super::compact(window) { WIDTH.1 } else { WIDTH.0 }))
                 .flex_none()
                 .p_4()
                 .bg(theme.panel)

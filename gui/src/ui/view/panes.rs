@@ -40,7 +40,7 @@ impl Root {
     }
 
     /// The buckets list.
-    pub(super) fn sidebar(&mut self, theme: &Theme, cx: &mut Context<Self>) -> Div {
+    pub(super) fn sidebar(&mut self, theme: &Theme, window: &Window, cx: &mut Context<Self>) -> Div {
         let open = self.browser.bucket().map(str::to_owned);
         let rows = self.buckets.iter().enumerate().map(|(i, bucket)| {
             let name = bucket.name.clone();
@@ -66,7 +66,7 @@ impl Root {
         div()
             .flex()
             .flex_col()
-            .w(px(240.))
+            .w(px(if super::compact(window) { 200. } else { 240. }))
             .flex_none()
             .bg(theme.panel)
             .border_r_1()

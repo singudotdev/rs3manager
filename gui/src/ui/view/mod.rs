@@ -14,7 +14,16 @@ use super::profiles::ProfilesDialog;
 use super::root::{Modal, Root};
 use super::theme::{self, SANS};
 use super::{Cancel, DeleteSelected, FocusFilter, GoUp, Refresh, RenameSelected, SelectAllRows, Submit};
-use gpui::{Context, ExternalPaths, Focusable as _, Window, div, prelude::*};
+use gpui::{Context, ExternalPaths, Focusable as _, Window, div, prelude::*, px};
+
+/// Below this window width the side panels narrow and the list drops its Modified column, so names keep room in half a
+/// laptop's screen or a tiled window.
+const COMPACT_BELOW: f32 = 1100.;
+
+/// Whether `window` is narrow enough for the compact layout.
+fn compact(window: &Window) -> bool {
+    window.viewport_size().width < px(COMPACT_BELOW)
+}
 
 impl Root {
     /// Handles [`Submit`]: the dialog's main button.
@@ -69,7 +78,7 @@ impl Render for Root {
             .flex()
             .flex_1()
             .min_h_0()
-            .child(self.sidebar(&theme, cx))
+            .child(self.sidebar(&theme, window, cx))
             .child(
                 div()
                     .flex()
@@ -77,9 +86,9 @@ impl Render for Root {
                     .flex_1()
                     .min_w_0()
                     .child(self.toolbar(&theme, window, cx))
-                    .child(self.rows(&theme, cx)),
+                    .child(self.rows(&theme, window, cx)),
             )
-            .children(self.details_pane(&theme, cx));
+            .children(self.details_pane(&theme, window, cx));
         div()
             .id("root")
             .relative()

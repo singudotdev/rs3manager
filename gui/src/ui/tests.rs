@@ -148,6 +148,14 @@ fn browsing_previewing_and_editing_headers(cx: &mut TestAppContext) {
 
     click(cx, "row notes.txt");
     until(cx, &view, "the details", |r| r.details.as_ref().is_some_and(|d| d.form.is_some()));
+    // Half a laptop's screen, the details panel open: names stay readable.
+    let full = cx.update(|window, _| window.viewport_size());
+    cx.simulate_resize(gpui::size(gpui::px(950.), gpui::px(700.)));
+    cx.run_until_parked();
+    let name_cell = cx.debug_bounds("name notes.txt").expect("the name is drawn");
+    assert!(name_cell.size.width >= gpui::px(200.), "names squeezed to {:?}", name_cell.size.width);
+    cx.simulate_resize(full);
+    cx.run_until_parked();
     until(
         cx,
         &view,
