@@ -136,49 +136,54 @@ impl Root {
             Modal::Share(dialog) => Self::share_dialog(dialog, theme, cx),
             // Drawn under the profile button, without dimming the window.
             Modal::ProfileMenu(_) => return None,
-            Modal::Replace { existing, .. } => {
-                const SHOWN: usize = 6;
-                let count = existing.len();
-                let title = if count == 1 {
-                    format!("Replace {}?", base_name(&existing[0]))
-                } else {
-                    format!("Replace {count} objects?")
-                };
-                let names = existing.iter().take(SHOWN).map(|k| div().truncate().child(k.clone()));
-                let more = (count > SHOWN).then(|| format!("and {} more", count - SHOWN));
-                card(theme, 480.)
-                    .child(heading(title.into()))
-                    .child(div().text_color(theme.muted).child(if count == 1 {
-                        "An object with this name is already there. Replacing it can't be undone.".to_owned()
-                    } else {
-                        "These are already there. Replacing them can't be undone.".to_owned()
-                    }))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_0p5()
-                            .font_family(MONO)
-                            .text_xs()
-                            .children(names)
-                            .children(more.map(|m| div().text_color(theme.muted).child(m))),
-                    )
-                    .child(
-                        footer()
-                            .child(cancel(theme, cx))
-                            .child(
-                                button("replace", "Replace", Kind::Danger, false, theme)
-                                    .on_click(cx.listener(|this, _, window, cx| this.replace_chosen(true, window, cx))),
-                            )
-                            .child(
-                                button("skip", "Skip existing", Kind::Primary, false, theme).on_click(
-                                    cx.listener(|this, _, window, cx| this.replace_chosen(false, window, cx)),
-                                ),
-                            ),
-                    )
-            }
+            Modal::Replace { jobs, existing } => Self::replace_dialog(jobs.len(), existing, theme, cx),
         };
         Some(div().absolute().inset_0().flex().items_center().justify_center().bg(theme.scrim).occlude().child(content))
+    }
+
+    /// The question before an upload of `total` files of which `existing` are already there: each button says what
+    /// it does to how many, the safe one first; uploading only the new ones isn't offered when there are none.
+    fn replace_dialog(total: usize, existing: &[String], theme: &Theme, cx: &mut Context<Self>) -> Div {
+        const SHOWN: usize = 6;
+        let (count, new) = (existing.len(), total - existing.len());
+        let plural = |n: usize| if n == 1 { "" } else { "s" };
+        let title = match (count, total) {
+            (1, 1) => format!("{} is already there", base_name(&existing[0])),
+            (c, t) if c == t => format!("All {t} files are already there"),
+            (c, t) => format!("{c} of {t} files are already there"),
+        };
+        let names = existing.iter().take(SHOWN).map(|k| div().truncate().child(k.clone()));
+        let more = (count > SHOWN).then(|| format!("and {} more", count - SHOWN));
+        card(theme, 480.)
+            .child(heading(title.into()))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_0p5()
+                    .font_family(MONO)
+                    .text_xs()
+                    .children(names)
+                    .children(more.map(|m| div().text_color(theme.muted).child(m))),
+            )
+            .child(div().text_color(theme.muted).child(format!(
+                "Overwriting replaces what's in the bucket with your file{}; it can't be undone.",
+                plural(count)
+            )))
+            .child(
+                footer()
+                    .child(cancel(theme, cx))
+                    .child(
+                        button("overwrite", format!("Overwrite {count}"), Kind::Danger, false, theme)
+                            .on_click(cx.listener(|this, _, window, cx| this.replace_chosen(true, window, cx))),
+                    )
+                    .when(new > 0, |d| {
+                        d.child(
+                            button("only-new", format!("Upload only the {new} new"), Kind::Primary, false, theme)
+                                .on_click(cx.listener(|this, _, window, cx| this.replace_chosen(false, window, cx))),
+                        )
+                    }),
+            )
     }
 
     /// The profile dropdown, while open: the search field, the matching profiles (the current one marked, the

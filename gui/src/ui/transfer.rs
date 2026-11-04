@@ -133,7 +133,8 @@ impl Root {
         if fresh.is_empty() {
             self.info("Nothing uploaded: every file is already there", cx);
         } else {
-            self.info(format!("Skipped {} file(s) already there", existing.len()), cx);
+            let (new, kept) = (fresh.len(), existing.len());
+            self.info(format!("Uploading {new} new file(s); the {kept} already there were left as they were"), cx);
             self.queue(fresh, cx);
         }
     }

@@ -273,7 +273,18 @@ fn creating_renaming_and_deleting_from_the_window(cx: &mut TestAppContext) {
     };
     assert_eq!(view.read_with(cx, |r, _| uploaded(r)), "dropped/sub/b.json");
 
-    // Replace uploads them all.
+    // When every file is there, enter overwrites nothing and only-new isn't offered.
+    view.update(cx, |r, cx| r.upload_paths(vec![local.clone()], cx));
+    until(cx, &view, "the all-existing question", |r| {
+        matches!(&r.modal, Some(Modal::Replace { jobs, existing }) if jobs.len() == 2 && existing.len() == 2)
+    });
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("button Upload only the 0 new").is_none());
+    cx.simulate_keystrokes("enter");
+    assert!(view.read_with(cx, |r, _| matches!(r.modal, Some(Modal::Replace { .. }))), "enter doesn't overwrite");
+    cx.simulate_keystrokes("escape");
+
+    // Overwriting uploads them all.
     view.update(cx, |r, cx| r.upload_paths(vec![local], cx));
     until(
         cx,
@@ -281,7 +292,7 @@ fn creating_renaming_and_deleting_from_the_window(cx: &mut TestAppContext) {
         "the replace question",
         |r| matches!(&r.modal, Some(Modal::Replace { existing, .. }) if existing.len() == 2),
     );
-    click(cx, "button Replace");
+    click(cx, "button Overwrite 2");
     until(cx, &view, "the replacements", |r| !r.transfers.busy() && r.transfers.items().len() == 4);
     let statuses: Vec<_> = view.read_with(cx, |r, _| r.transfers.items().iter().map(|t| t.status.clone()).collect());
     assert!(statuses.iter().all(|s| *s == crate::state::transfers::Status::Done), "{statuses:?}");
