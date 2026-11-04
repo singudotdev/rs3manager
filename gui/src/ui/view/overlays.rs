@@ -120,9 +120,10 @@ impl Root {
                         },
                     )),
                 )),
-            Modal::Prompt { title, input, error, busy, .. } => card(theme, 440.)
+            Modal::Prompt { title, input, error, busy, hint, .. } => card(theme, 440.)
                 .child(heading(title.clone()))
                 .child(input.clone())
+                .children(hint.clone().map(|h| div().text_xs().text_color(theme.muted).child(h)))
                 .children(error.clone().map(|e| div().text_xs().text_color(theme.danger).child(e)))
                 .child(
                     footer().child(cancel(theme, cx)).child(

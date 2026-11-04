@@ -62,14 +62,14 @@ fn names(session: &Session, bucket: &str, prefix: &str) -> Vec<String> {
 #[ignore = "needs a radosgw: dev/test-rgw.sh"]
 fn buckets_are_created_listed_and_deleted() {
     let (_engine, session, bucket, dir) = setup("buckets");
-    assert!(wait(session.list_buckets()).unwrap().iter().any(|b| b.name == bucket && b.created.is_some()));
+    assert!(wait(session.list_buckets(false)).unwrap().iter().any(|b| b.name == bucket && b.created.is_some()));
     assert!(matches!(wait(session.create_bucket(&bucket)), Err(S3Error::BucketExists)));
     assert!(matches!(wait(session.create_bucket("Bad_Name")), Err(S3Error::Invalid(_))));
 
     put(&session, &bucket, dir.path(), "a/b.txt", b"x", Headers::default());
     assert!(matches!(wait(session.delete_bucket(&bucket, false)), Err(S3Error::BucketNotEmpty)));
     wait(session.delete_bucket(&bucket, true)).unwrap();
-    assert!(!wait(session.list_buckets()).unwrap().iter().any(|b| b.name == bucket));
+    assert!(!wait(session.list_buckets(false)).unwrap().iter().any(|b| b.name == bucket));
 }
 
 #[test]
@@ -157,7 +157,7 @@ fn a_wrong_secret_is_told_apart() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Engine::new().unwrap();
     let session = wait(engine.connect(&profile(dir.path(), Some("wrong-secret")), "test")).unwrap();
-    let result = wait(session.list_buckets());
+    let result = wait(session.list_buckets(false));
     assert!(matches!(result, Err(S3Error::BadCredentials(_))), "{result:?}");
 }
 
@@ -241,7 +241,7 @@ fn group_policies_decide_what_a_project_user_may_do() {
     }
 
     // Production, read-only buckets: every bucket of the account is listed, those out of reach marked.
-    let buckets = wait(ro.list_buckets()).unwrap();
+    let buckets = wait(ro.list_buckets(true)).unwrap();
     let listable = |name: &str| buckets.iter().find(|b| b.name == name).map(|b| b.listable);
     assert_eq!((listable(&ours), listable(&theirs)), (Some(true), Some(false)));
     let denied = |r: Result<(), S3Error>| matches!(r, Err(S3Error::AccessDenied(_)));

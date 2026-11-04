@@ -5,6 +5,7 @@
 //! - `browse`: buckets, folders, objects: listing, creating, renaming, deleting, metadata, previews.
 //! - `transfer`: uploads (also dropped files) and downloads, queued and running on the session.
 //! - `profiles`: the AWS CLI profiles dialog.
+//! - `rights`: what the profile's policies allow, and so what's shown.
 //! - `share`: download links to an object, with an expiry.
 //! - `view`: drawing each area.
 //! - [`input`]: text fields.
@@ -13,6 +14,7 @@
 mod browse;
 pub mod input;
 mod profiles;
+mod rights;
 mod root;
 mod share;
 pub mod theme;

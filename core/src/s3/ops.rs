@@ -38,9 +38,10 @@ macro_rules! with_headers {
 pub(crate) use with_headers;
 
 impl Session {
-    /// The account's buckets, by name.
-    pub fn list_buckets(&self) -> Pending<Vec<Bucket>> {
-        self.spawn(|client| async move {
+    /// The account's buckets, by name. With `check_access`, those the profile may not list are found by trying (one
+    /// listing each); without, all are taken as listable, for a caller that knows the policies.
+    pub fn list_buckets(&self, check_access: bool) -> Pending<Vec<Bucket>> {
+        self.spawn(move |client| async move {
             let mut buckets = Vec::new();
             let mut token = None;
             loop {
@@ -56,7 +57,9 @@ impl Session {
                 }
             }
             buckets.sort_by(|a, b| a.name.cmp(&b.name));
-            mark_unlistable(&client, &mut buckets).await;
+            if check_access {
+                mark_unlistable(&client, &mut buckets).await;
+            }
             Ok(buckets)
         })
     }

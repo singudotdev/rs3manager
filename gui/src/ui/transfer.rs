@@ -55,7 +55,7 @@ fn uploads_for(bucket: &str, prefix: &str, paths: &[PathBuf]) -> (Vec<Job>, Vec<
 impl Root {
     /// Picks files (or, with `folders`, folders) to upload into the open folder.
     pub fn pick_uploads(&mut self, folders: bool, cx: &mut Context<Self>) {
-        if self.browser.bucket().is_none() {
+        if self.browser.bucket().is_none() || !self.may_write_here() {
             return;
         }
         let picked = cx.prompt_for_paths(PathPromptOptions {
@@ -84,6 +84,10 @@ impl Root {
             self.error("Open a bucket first, then drop the files on it", cx);
             return;
         };
+        if !self.may_write_here() {
+            self.error(format!("This profile's policies don't allow uploading into {bucket}"), cx);
+            return;
+        }
         let prefix = self.browser.prefix().to_owned();
         let walking = cx.background_executor().spawn(async move { uploads_for(&bucket, &prefix, &paths) });
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {

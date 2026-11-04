@@ -316,14 +316,14 @@ fn profiles_are_added_and_switched_in_the_dialog(cx: &mut TestAppContext) {
 
 #[gpui::test]
 #[ignore = "needs a radosgw: dev/test-rgw.sh"]
-fn what_the_policies_deny_is_shown_and_explained(cx: &mut TestAppContext) {
+fn a_read_only_project_user_sees_only_what_its_policies_allow(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let engine = Engine::new().unwrap();
     let root: Session =
         wait(engine.connect(&files_as(&dir.path().join("root"), "R3M_TEST_PROD_ROOT"), "test")).unwrap();
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
     let (ours, theirs) = (format!("r3mtest-ui{stamp}-prod"), format!("aa-ui{stamp}-prod"));
-    let guards: Vec<_> = [&ours, &theirs]
+    let _guards: Vec<_> = [&ours, &theirs]
         .into_iter()
         .map(|name| {
             wait(root.create_bucket(name)).unwrap();
@@ -332,26 +332,78 @@ fn what_the_policies_deny_is_shown_and_explained(cx: &mut TestAppContext) {
         .collect();
     let (view, cx) = window(cx, files_as(&dir.path().join("ro"), "R3M_TEST_PROD_RO"));
 
-    let listable = |r: &Root, name: &str| r.buckets.iter().find(|b| b.name == name).map(|b| b.listable);
-    view.read_with(cx, |r, _| assert_eq!((listable(r, &ours), listable(r, &theirs)), (Some(true), Some(false))));
-    click(cx, &format!("bucket {theirs}"));
-    cx.run_until_parked();
-    assert!(view.read_with(cx, |r, _| !r.open_bucket_listable() && r.notice.is_none()), "explained in place");
-    assert!(cx.debug_bounds("button Upload files").is_none(), "nothing to do in a bucket out of reach");
+    let identity = view.read_with(cx, |r, _| r.identity().unwrap());
+    assert!(identity.starts_with("tester · ") && identity.contains("read-only-buckets"), "{identity}");
+    let names: Vec<String> = view.read_with(cx, |r, _| r.buckets.iter().map(|b| b.name.clone()).collect());
+    assert!(names.contains(&ours) && !names.contains(&theirs), "out of reach isn't shown: {names:?}");
+    assert!(cx.debug_bounds("button New").is_none(), "no new buckets in prod");
 
-    // Read-only buckets: creating one is refused in the dialog, saying it's the policies.
+    click(cx, &format!("bucket {ours}"));
+    until(cx, &view, "the bucket", |r| r.browser.bucket() == Some(ours.as_str()) && !r.browser.loading());
+    assert!(cx.debug_bounds("button Upload files").is_some(), "objects are read-write");
+    assert!(cx.debug_bounds("button Delete bucket").is_none(), "buckets are read-only");
+}
+
+#[gpui::test]
+#[ignore = "needs a radosgw: dev/test-rgw.sh"]
+fn new_buckets_follow_the_names_the_policies_allow(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (view, cx) = window(cx, files_as(&dir.path().join("rw"), "R3M_TEST_DEV_RW"));
     click(cx, "button New");
-    let input = view.read_with(cx, |r, _| match &r.modal {
-        Some(Modal::Prompt { input, .. }) => input.clone(),
+    let (input, hint) = view.read_with(cx, |r, _| match &r.modal {
+        Some(Modal::Prompt { input, hint, .. }) => (input.clone(), hint.clone()),
         _ => panic!("the name dialog is open"),
     });
-    type_into(cx, &input, &format!("r3mtest-new{stamp}-prod"));
+    assert_eq!(hint.as_deref(), Some("Allowed names: r3mtest-*-dev"));
+    // Refused before asking the gateway, saying what's allowed.
+    type_into(cx, &input, "elsewhere-x-dev");
     cx.simulate_keystrokes("enter");
-    until(
-        cx,
-        &view,
-        "the refusal",
-        |r| matches!(&r.modal, Some(Modal::Prompt { error: Some(e), busy: false, .. }) if e.contains("policies don't allow creating")),
-    );
-    drop(guards);
+    let error = view.read_with(cx, |r, _| match &r.modal {
+        Some(Modal::Prompt { error, busy: false, .. }) => error.clone(),
+        _ => None,
+    });
+    assert_eq!(error.as_deref(), Some("This profile's policies only allow creating: r3mtest-*-dev"));
+
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+    let name = format!("r3mtest-ui{stamp}-dev");
+    type_into(cx, &input, &name);
+    cx.simulate_keystrokes("enter");
+    until(cx, &view, "the new bucket", |r| r.modal.is_none() && r.buckets.iter().any(|b| b.name == name));
+    click(cx, &format!("bucket {name}"));
+    until(cx, &view, "the bucket", |r| r.browser.bucket() == Some(name.as_str()) && !r.browser.loading());
+    click(cx, "button Delete bucket");
+    cx.simulate_keystrokes("enter");
+    until(cx, &view, "the bucket gone", |r| !r.buckets.iter().any(|b| b.name == name));
+}
+
+/// Puts user `switcher` of the dev test account in the read-write (`rw`) or read-only (`ro`) buckets group, as an admin
+/// would, and returns its keys.
+fn switch_buckets_group(mode: &str) -> (String, String) {
+    let out = std::process::Command::new("dev/rgw.sh")
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+        .args(["project", "r3mtest", "dev", "switcher", mode])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let profile = String::from_utf8(out.stdout).unwrap();
+    let value = |name: &str| profile.lines().find_map(|l| l.strip_prefix(&format!("{name} = "))).unwrap().to_owned();
+    (value("aws_access_key_id"), value("aws_secret_access_key"))
+}
+
+#[gpui::test]
+#[ignore = "needs a radosgw: dev/test-rgw.sh"]
+fn refresh_picks_up_changed_permissions(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (key, secret) = switch_buckets_group("rw");
+    let files = Files::in_dir(dir.path());
+    files.save(None, &ProfileEdit::new("test", &env("R3M_TEST_ENDPOINT"), "", &key, &secret).unwrap()).unwrap();
+    let (view, cx) = window(cx, files);
+    assert!(cx.debug_bounds("button New").is_some(), "may create buckets");
+
+    switch_buckets_group("ro");
+    click(cx, "button Refresh");
+    until(cx, &view, "the new permissions", |r| !r.buckets_loading && !r.may_create_buckets());
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("button New").is_none(), "no longer");
+    assert!(view.read_with(cx, |r, _| r.identity().unwrap()).contains("read-only-buckets"));
 }

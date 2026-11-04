@@ -1,5 +1,6 @@
 //! The top bar (profile and refresh), the buckets on the left, and the open folder's path and toolbar.
 
+use super::super::rights;
 use super::super::root::Root;
 use super::super::theme::Theme;
 use super::super::widgets::{Kind, button, mark};
@@ -32,6 +33,9 @@ impl Root {
             )
             .children(endpoint.map(|e| div().text_xs().text_color(theme.muted).truncate().child(e)))
             .children(state.map(|s| div().text_xs().text_color(theme.muted).child(s)))
+            .children(self.identity().map(|who| {
+                div().text_xs().text_color(theme.muted).truncate().debug_selector(|| "identity".to_owned()).child(who)
+            }))
             .child(div().flex_1())
             .child(
                 button("refresh", "Refresh", Kind::Quiet, self.session.is_none(), theme)
@@ -94,10 +98,12 @@ impl Root {
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .child("BUCKETS"),
                     )
-                    .child(
-                        button("new-bucket", "New", Kind::Quiet, self.session.is_none(), theme)
-                            .on_click(cx.listener(|this, _, window, cx| this.ask_create_bucket(window, cx))),
-                    ),
+                    .when(self.may_create_buckets(), |d| {
+                        d.child(
+                            button("new-bucket", "New", Kind::Quiet, self.session.is_none(), theme)
+                                .on_click(cx.listener(|this, _, window, cx| this.ask_create_bucket(window, cx))),
+                        )
+                    }),
             )
             .child(
                 div()
@@ -140,52 +146,53 @@ impl Root {
             );
         }
         let none = selected == 0;
+        let (write, read, delete, rename) = (
+            self.may_write_here(),
+            self.may_on_selection(rights::READ),
+            self.may_on_selection(rights::DELETE),
+            self.may_on_selection(rights::RENAME),
+        );
         // Wraps onto more lines in a narrow window rather than pushing buttons out of sight.
         let actions = div()
             .flex()
             .flex_wrap()
             .items_center()
             .gap_1()
-            .child(
-                button("upload", "Upload files", Kind::Primary, false, theme)
-                    .on_click(cx.listener(|this, _, _, cx| this.pick_uploads(false, cx))),
-            )
-            .child(
-                button("upload-dir", "Upload folder", Kind::Plain, false, theme)
-                    .on_click(cx.listener(|this, _, _, cx| this.pick_uploads(true, cx))),
-            )
-            .child(
-                button("new-folder", "New folder", Kind::Plain, false, theme)
-                    .on_click(cx.listener(|this, _, window, cx| this.ask_create_folder(window, cx))),
-            )
-            .child(div().w(px(8.)))
-            .child(
-                button("download", "Download", Kind::Plain, none, theme)
-                    .on_click(cx.listener(|this, _, _, cx| this.download_selected(cx))),
-            )
-            .child(
-                button("rename", "Rename", Kind::Plain, selected != 1, theme)
-                    .on_click(cx.listener(|this, _, window, cx| this.ask_rename(window, cx))),
-            )
-            .child(
-                button("delete", "Delete", Kind::Danger, none, theme)
-                    .on_click(cx.listener(|this, _, window, cx| this.ask_delete_selected(window, cx))),
-            );
-        let bucket_actions = prefix.is_empty().then(|| {
-            let (a, b) = (bucket.clone(), bucket.clone());
-            div()
-                .flex()
-                .gap_1()
-                .child(
-                    button("delete-bucket", "Delete bucket", Kind::Quiet, false, theme).on_click(
-                        cx.listener(move |this, _, window, cx| this.ask_delete_bucket(&a, false, window, cx)),
-                    ),
+            .when(write, |d| {
+                d.child(
+                    button("upload", "Upload files", Kind::Primary, false, theme)
+                        .on_click(cx.listener(|this, _, _, cx| this.pick_uploads(false, cx))),
                 )
                 .child(
-                    button("empty-bucket", "Empty and delete", Kind::Quiet, false, theme)
-                        .on_click(cx.listener(move |this, _, window, cx| this.ask_delete_bucket(&b, true, window, cx))),
+                    button("upload-dir", "Upload folder", Kind::Plain, false, theme)
+                        .on_click(cx.listener(|this, _, _, cx| this.pick_uploads(true, cx))),
                 )
-        });
+                .child(
+                    button("new-folder", "New folder", Kind::Plain, false, theme)
+                        .on_click(cx.listener(|this, _, window, cx| this.ask_create_folder(window, cx))),
+                )
+                .child(div().w(px(8.)))
+            })
+            // Disabled without a selection, hidden when the policies deny it for what's selected.
+            .when(none || read, |d| {
+                d.child(
+                    button("download", "Download", Kind::Plain, none, theme)
+                        .on_click(cx.listener(|this, _, _, cx| this.download_selected(cx))),
+                )
+            })
+            .when(none || rename, |d| {
+                d.child(
+                    button("rename", "Rename", Kind::Plain, selected != 1, theme)
+                        .on_click(cx.listener(|this, _, window, cx| this.ask_rename(window, cx))),
+                )
+            })
+            .when(none || delete, |d| {
+                d.child(
+                    button("delete", "Delete", Kind::Danger, none, theme)
+                        .on_click(cx.listener(|this, _, window, cx| this.ask_delete_selected(window, cx))),
+                )
+            });
+        let bucket_actions = prefix.is_empty().then(|| self.bucket_actions(&bucket, theme, cx)).flatten();
         div()
             .flex()
             .flex_col()
@@ -205,6 +212,29 @@ impl Root {
             .when(listable, |d| {
                 d.child(actions.children(bucket_actions.map(|b| div().flex_1().flex().justify_end().child(b))))
             })
+    }
+
+    /// Deleting the open bucket, as far as the policies allow; `None` when they allow neither way.
+    fn bucket_actions(&self, bucket: &str, theme: &Theme, cx: &mut Context<Self>) -> Option<Div> {
+        let (delete, empty) = (self.may_delete_bucket(bucket, false), self.may_delete_bucket(bucket, true));
+        let (a, b) = (bucket.to_owned(), bucket.to_owned());
+        delete.then(|| {
+            div()
+                .flex()
+                .gap_1()
+                .child(
+                    button("delete-bucket", "Delete bucket", Kind::Quiet, false, theme).on_click(
+                        cx.listener(move |this, _, window, cx| this.ask_delete_bucket(&a, false, window, cx)),
+                    ),
+                )
+                .when(empty, |d| {
+                    d.child(
+                        button("empty-bucket", "Empty and delete", Kind::Quiet, false, theme).on_click(
+                            cx.listener(move |this, _, window, cx| this.ask_delete_bucket(&b, true, window, cx)),
+                        ),
+                    )
+                })
+        })
     }
 }
 

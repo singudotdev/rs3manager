@@ -2,12 +2,13 @@
 //! editable headers, previews, and the dialogs that create, rename and delete.
 
 use super::input::TextInput;
+use super::rights;
 use super::root::{Confirmed, Modal, Prompted, Root};
 use crate::state::browser::Row;
 use crate::state::format::{base_name, key_in, name_in, parent};
 use gpui::{AppContext as _, ClipboardItem, Context, Entity, Image, ImageFormat, SharedString, Window};
 use r3manager_core::s3::names::url_path;
-use r3manager_core::s3::{Headers, ObjectInfo, Preview, S3Error};
+use r3manager_core::s3::{Access, Headers, ObjectInfo, Preview, S3Error};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -142,16 +143,25 @@ fn as_text(preview: &Preview) -> Option<String> {
 }
 
 impl Root {
-    /// Lists the account's buckets.
+    /// Lists the account's buckets the profile may see: radosgw lists every bucket of the account, so those its
+    /// policies keep it out of are left out (judged by the policies when known, else by trying each).
     pub fn load_buckets(&mut self, cx: &mut Context<Self>) {
         self.buckets_loading = true;
-        self.run(cx, r3manager_core::s3::Session::list_buckets, |this, result, cx| {
-            this.buckets_loading = false;
-            match result {
-                Ok(buckets) => this.buckets = buckets,
-                Err(e) => this.error(format!("Couldn't list the buckets: {e}"), cx),
-            }
-        });
+        let check = matches!(self.access, Access::Unknown(_));
+        self.run(
+            cx,
+            move |s| s.list_buckets(check),
+            |this, result, cx| {
+                this.buckets_loading = false;
+                match result {
+                    Ok(mut buckets) => {
+                        buckets.retain(|b| b.listable && this.access.may("s3:ListBucket", &b.name, None));
+                        this.buckets = buckets;
+                    }
+                    Err(e) => this.error(format!("Couldn't list the buckets: {e}"), cx),
+                }
+            },
+        );
     }
 
     /// Opens bucket `name` at its top.
@@ -225,9 +235,9 @@ impl Root {
         self.list(generation, None, cx);
     }
 
-    /// Lists the buckets and the open folder again.
+    /// Reads the profile's policies again (they may have changed), then the buckets and the open folder.
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
-        self.load_buckets(cx);
+        self.load_access(cx);
         self.reload_folder(cx);
     }
 
@@ -289,6 +299,13 @@ impl Root {
     /// Fetches `key`'s details, then its preview.
     fn load_details(&mut self, key: String, cx: &mut Context<Self>) {
         let Some(bucket) = self.browser.bucket().map(str::to_owned) else { return };
+        // HeadObject needs the same right as reading it: known denied, it isn't asked.
+        if !self.may_on_key(rights::READ, &key) {
+            if let Some(details) = self.details.as_mut() {
+                details.preview = PreviewState::None("This profile's policies don't allow reading this object.".into());
+            }
+            return;
+        }
         let for_key = key.clone();
         let b = bucket.clone();
         self.run(
@@ -413,7 +430,13 @@ impl Root {
 
     /// Asks for a new bucket's name.
     pub fn ask_create_bucket(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.may_create_buckets() {
+            return;
+        }
         self.prompt("New bucket", "", 0..0, Prompted::CreateBucket, window, cx);
+        if let (Some(Modal::Prompt { hint, .. }), Some(patterns)) = (&mut self.modal, self.access.bucket_patterns()) {
+            *hint = Some(format!("Allowed names: {}", patterns.join(", ")).into());
+        }
     }
 
     /// Asks for a new folder's name in the open folder.
@@ -428,6 +451,9 @@ impl Root {
     pub fn ask_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let selection = self.browser.selection();
         let [row] = selection.as_slice() else { return };
+        if !self.may_on_selection(rights::RENAME) {
+            return;
+        }
         let row = (*row).clone();
         let shown = name_in(row.key(), self.browser.prefix()).to_owned();
         let end = match &row {
@@ -440,6 +466,9 @@ impl Root {
     /// Asks before deleting the selected rows.
     pub fn ask_delete_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(bucket) = self.browser.bucket().map(str::to_owned) else { return };
+        if !self.may_on_selection(rights::DELETE) {
+            return;
+        }
         let rows: Vec<Row> = self.browser.selection().into_iter().cloned().collect();
         let (folders, objects) = rows.iter().fold((0, 0), |(f, o), r| match r {
             Row::Folder(_) => (f + 1, o),
@@ -462,6 +491,9 @@ impl Root {
 
     /// Asks before deleting bucket `name`.
     pub fn ask_delete_bucket(&mut self, name: &str, force: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.may_delete_bucket(name, force) {
+            return;
+        }
         let body = if force {
             "Every object, version and unfinished upload in it is deleted first. This can't be undone."
         } else {
@@ -549,6 +581,12 @@ impl Root {
         let prefix = self.browser.prefix().to_owned();
         match action {
             Prompted::CreateBucket => {
+                // A name the policies surely refuse is refused here, with the names they allow, without a round trip.
+                if !self.access.may("s3:CreateBucket", &name, None) {
+                    let allowed = self.access.bucket_patterns().unwrap_or_default().join(", ");
+                    self.prompt_failed(format!("This profile's policies only allow creating: {allowed}"), cx);
+                    return;
+                }
                 let n = name.clone();
                 self.run(
                     cx,

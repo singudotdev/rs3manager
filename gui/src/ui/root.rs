@@ -13,7 +13,7 @@ use gpui::{
     UniformListScrollHandle, WeakEntity, Window,
 };
 use r3manager_core::profiles::{Files, Profile, selected_by_env};
-use r3manager_core::s3::{Bucket, Engine, Pending, S3Error, Session};
+use r3manager_core::s3::{Access, Bucket, Engine, Pending, S3Error, Session};
 use std::time::Duration;
 
 /// How long a message that isn't an error stays.
@@ -42,6 +42,8 @@ pub enum Modal {
         error: Option<SharedString>,
         /// Whether the gateway is being asked.
         busy: bool,
+        /// What may be typed, shown under the field.
+        hint: Option<SharedString>,
     },
     /// The AWS CLI profiles: pick, add, edit, remove.
     Profiles(ProfilesDialog),
@@ -111,8 +113,10 @@ pub struct Root {
     pub session: Option<Session>,
     /// Bumped by every connection, so answers for an earlier session are dropped.
     session_generation: u64,
-    /// The account's buckets.
+    /// The account's buckets the profile may see.
     pub buckets: Vec<Bucket>,
+    /// What the profile may do, as its policies say.
+    pub access: Access,
     /// Whether the buckets are being listed.
     pub buckets_loading: bool,
     /// The folder shown.
@@ -164,6 +168,7 @@ impl Root {
             session_generation: 0,
             buckets: Vec::new(),
             buckets_loading: false,
+            access: Access::Unknown("not connected".to_owned()),
             browser: Browser::default(),
             details: None,
             transfers: Transfers::default(),
@@ -200,6 +205,7 @@ impl Root {
     pub fn connect(&mut self, name: String, cx: &mut Context<Self>) {
         self.session = None;
         self.session_generation += 1;
+        self.access = Access::Unknown("not connected".to_owned());
         self.buckets.clear();
         self.browser.open(None, String::new());
         self.details = None;
@@ -216,7 +222,7 @@ impl Root {
                 match result {
                     Ok(session) => {
                         this.session = Some(session);
-                        this.load_buckets(cx);
+                        this.load_access(cx);
                     }
                     Err(e) => {
                         this.buckets_loading = false;
@@ -235,6 +241,7 @@ impl Root {
         self.session = None;
         self.session_generation += 1;
         self.profile = None;
+        self.access = Access::Unknown("not connected".to_owned());
         self.buckets.clear();
         self.buckets_loading = false;
         self.browser.open(None, String::new());
@@ -316,7 +323,7 @@ impl Root {
         });
         let field = input.read(cx).focus_handle(cx);
         window.focus(&field, cx);
-        self.modal = Some(Modal::Prompt { title: title.into(), input, action, error: None, busy: false });
+        self.modal = Some(Modal::Prompt { title: title.into(), input, action, error: None, busy: false, hint: None });
         cx.notify();
     }
 

@@ -1,6 +1,7 @@
 //! The selected object's panel: what it is, what can be done with it, its preview and its headers.
 
 use super::super::browse::{Details, HeadersForm, PreviewState};
+use super::super::rights;
 use super::super::root::Root;
 use super::super::theme::{MONO, Theme};
 use super::super::widgets::{Kind, button, label};
@@ -33,26 +34,40 @@ impl Root {
                     .child(div().text_xs().font_family(MONO).min_w_0().child(v))
             }))
         });
+        let key = details.key.as_str();
+        let (read, rename, delete) = (
+            self.may_on_key(rights::READ, key),
+            self.may_on_key(rights::RENAME, key),
+            self.may_on_key(rights::DELETE, key),
+        );
         let actions = div()
             .flex()
             .flex_wrap()
             .gap_1()
-            .child(
-                button("d-download", "Download", Kind::Primary, false, theme)
-                    .on_click(cx.listener(|this, _, _, cx| this.download_selected(cx))),
-            )
-            .child(
-                button("d-rename", "Rename", Kind::Plain, false, theme)
-                    .on_click(cx.listener(|this, _, window, cx| this.ask_rename(window, cx))),
-            )
-            .child(
-                button("d-delete", "Delete", Kind::Danger, false, theme)
-                    .on_click(cx.listener(|this, _, window, cx| this.ask_delete_selected(window, cx))),
-            )
-            .child(
-                button("d-share", "Share link", Kind::Plain, false, theme)
-                    .on_click(cx.listener(|this, _, window, cx| this.open_share(window, cx))),
-            )
+            .when(read, |d| {
+                d.child(
+                    button("d-download", "Download", Kind::Primary, false, theme)
+                        .on_click(cx.listener(|this, _, _, cx| this.download_selected(cx))),
+                )
+            })
+            .when(rename, |d| {
+                d.child(
+                    button("d-rename", "Rename", Kind::Plain, false, theme)
+                        .on_click(cx.listener(|this, _, window, cx| this.ask_rename(window, cx))),
+                )
+            })
+            .when(delete, |d| {
+                d.child(
+                    button("d-delete", "Delete", Kind::Danger, false, theme)
+                        .on_click(cx.listener(|this, _, window, cx| this.ask_delete_selected(window, cx))),
+                )
+            })
+            .when(read, |d| {
+                d.child(
+                    button("d-share", "Share link", Kind::Plain, false, theme)
+                        .on_click(cx.listener(|this, _, window, cx| this.open_share(window, cx))),
+                )
+            })
             .child(
                 button("d-key", "Copy key", Kind::Quiet, false, theme)
                     .on_click(cx.listener(|this, _, _, cx| this.copy_key(cx))),
@@ -96,12 +111,21 @@ impl Root {
                 .child(actions)
                 .children(facts)
                 .child(section("Preview", theme).child(preview(details, theme)))
-                .children(details.form.as_ref().map(|form| Self::headers_form(form, details, theme, cx))),
+                .children(details.form.as_ref().map(|form| {
+                    let editable = self.may_on_key(rights::EDIT_HEADERS, &details.key);
+                    Self::headers_form(form, details, editable, theme, cx)
+                })),
         )
     }
 
-    /// The headers form.
-    fn headers_form(form: &HeadersForm, details: &Details, theme: &Theme, cx: &mut Context<Self>) -> Div {
+    /// The headers form, with its buttons only when `editable`.
+    fn headers_form(
+        form: &HeadersForm,
+        details: &Details,
+        editable: bool,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> Div {
         let field = |name: &'static str, input| div().flex().flex_col().gap_1().child(label(name, theme)).child(input);
         let user = form.user.iter().enumerate().map(|(i, (k, v))| {
             div()
@@ -123,31 +147,41 @@ impl Root {
             .child(field("Content-Language", form.content_language.clone()))
             .child(label("Metadata (x-amz-meta-*)", theme))
             .children(user)
-            .child(
-                div().flex().child(
-                    button("meta-add", "Add metadata", Kind::Quiet, false, theme)
-                        .on_click(cx.listener(|this, _, _, cx| this.add_metadata_row(cx))),
-                ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap_1()
-                    .child(
-                        button(
-                            "h-save",
-                            if details.saving { "Saving…" } else { "Save headers" },
-                            Kind::Primary,
-                            details.saving,
-                            theme,
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| this.save_headers(cx))),
-                    )
-                    .child(
-                        button("h-reset", "Reset", Kind::Plain, details.saving, theme)
-                            .on_click(cx.listener(|this, _, _, cx| this.reset_headers(cx))),
+            .when(!editable, |d| {
+                d.child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.muted)
+                        .child("Read-only: this profile's policies don't allow changing this object."),
+                )
+            })
+            .when(editable, |d| {
+                d.child(
+                    div().flex().child(
+                        button("meta-add", "Add metadata", Kind::Quiet, false, theme)
+                            .on_click(cx.listener(|this, _, _, cx| this.add_metadata_row(cx))),
                     ),
-            )
+                )
+                .child(
+                    div()
+                        .flex()
+                        .gap_1()
+                        .child(
+                            button(
+                                "h-save",
+                                if details.saving { "Saving…" } else { "Save headers" },
+                                Kind::Primary,
+                                details.saving,
+                                theme,
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| this.save_headers(cx))),
+                        )
+                        .child(
+                            button("h-reset", "Reset", Kind::Plain, details.saving, theme)
+                                .on_click(cx.listener(|this, _, _, cx| this.reset_headers(cx))),
+                        ),
+                )
+            })
     }
 }
 
