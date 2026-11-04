@@ -58,6 +58,18 @@ cargo run -p r3manager-app --release
 On Linux GPUI needs the Wayland/X11, Vulkan and font development packages Zed lists for
 [building on Linux](https://github.com/zed-industries/zed/blob/main/docs/src/development/linux.md).
 
+### Installing on Linux
+
+Into `~/.local`, with a launcher entry and icon (the window's app id is `r3manager`, so docks group it under them):
+
+```sh
+cargo install --locked --path gui --root ~/.local
+install -Dm644 gui/assets/r3manager.desktop ~/.local/share/applications/r3manager.desktop
+install -Dm644 gui/assets/r3manager.svg ~/.local/share/icons/hicolor/scalable/apps/r3manager.svg
+```
+
+`~/.local/bin` must be on the `PATH` the desktop session starts launchers with.
+
 ## Development
 
 - `cargo test` runs the core's unit tests; `cargo test --workspace` adds the app's.
