@@ -3,7 +3,10 @@
 #
 #   dev/rgw.sh up                 start it (podman): one monitor, manager, OSD and radosgw; data kept in volumes
 #   dev/rgw.sh user NAME          create an S3 user (or reuse it), print its AWS CLI profile
-#   dev/rgw.sh account NAME       create a user account and its root user (or reuse them), print the root's profile
+#   dev/rgw.sh account NAME       create a user account and its root user (or reuse them) with the guardrails, print
+#                                 the root's profile
+#   dev/rgw.sh breakglass NAME    lift the guardrails of account NAME's root, through a throwaway second root; the next
+#                                 `account NAME` puts them back (as they are in this script)
 #   dev/rgw.sh project PROJECT ENV USER rw|ro
 #                                 account PROJECT-ENV with the team's groups, USER in read-write-objects and in
 #                                 read-write-buckets (rw) or read-only-buckets (ro); print USER's profile
@@ -102,7 +105,47 @@ account() {
     admin user create --uid="$uid" --display-name="$uid" --account-id="$id" --account-root \
       --gen-access-key --gen-secret >/dev/null || die "couldn't create the root user of account '$name'"
   fi
-  admin user info --uid="$uid" | keys_of | print_profile "$name"
+  local access secret
+  { read -r access; read -r secret; } < <(admin user info --uid="$uid" | keys_of)
+  guard_root "$access" "$secret" "$id" "$uid" "$name"
+  printf '%s\n%s\n' "$access" "$secret" | print_profile "$name"
+}
+
+# What nobody in a project account may do, the root included: rights are given only through the policies of the
+# account's users and groups, which the platform team writes (docs/decisions/0005-*). Bucket policies and ACLs would
+# let anyone grant access, even public, outside them.
+SHARING='"s3:PutBucketPolicy","s3:DeleteBucketPolicy","s3:PutBucketAcl","s3:PutObjectAcl","s3:PutObjectVersionAcl"'
+
+# Puts the guardrails on root user $4 (keys $1 $2) of account $5 (id $3), unless it has them: Deny the sharing
+# actions, and Deny changing its own policies, without which it would just delete them. Once on, only another root
+# can lift them (see `breakglass`), so they're set once and not rewritten.
+guard_root() {
+  local access=$1 secret=$2 id=$3 uid=$4 name=$5
+  if aws_as "$access" "$secret" iam list-user-policies --user-name "$uid" --output text | grep -qw guardrails; then
+    return
+  fi
+  aws_as "$access" "$secret" iam put-user-policy --user-name "$uid" --policy-name guardrails --policy-document \
+    '{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":['"$SHARING"'],"Resource":"*"},
+      {"Effect":"Deny","Action":["iam:PutUserPolicy","iam:DeleteUserPolicy","iam:AttachUserPolicy",
+      "iam:DetachUserPolicy"],"Resource":"arn:aws:iam::'"$id:user/$uid"'"}]}' >/dev/null \
+    || die "couldn't put the guardrails on the root of $name"
+}
+
+# Lifts the guardrails of account NAME's root: a second root, made for the purpose and removed after, deletes them.
+breakglass() {
+  local name=${1:?usage: dev/rgw.sh breakglass NAME} id uid temp access secret
+  uid="$name-root"
+  temp="$name-breakglass-$$"
+  id=$(admin account get --account-name="$name" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])') \
+    || die "no account '$name'"
+  { read -r access; read -r secret; } < <(admin user create --uid="$temp" --display-name="$temp" --account-id="$id" \
+    --account-root --gen-access-key --gen-secret | keys_of)
+  local lifted=0
+  aws_as "$access" "$secret" iam delete-user-policy --user-name "$uid" --policy-name guardrails >/dev/null && lifted=1
+  # Removed whatever happened: a spare root without guardrails is what this is meant to avoid.
+  admin user rm --uid="$temp" >/dev/null || die "couldn't remove the break-glass root $temp: remove it by hand"
+  [[ $lifted == 1 ]] || die "couldn't lift the guardrails of $uid"
+  echo "guardrails lifted from $uid; 'dev/rgw.sh account $name' puts them back"
 }
 
 # The AWS CLI as the user whose keys are $1 and $2, against the gateway; the rest are its arguments.
@@ -121,16 +164,18 @@ aws_as() {
 # test against exactly what production enforces.
 group_policy() {
   local group=$1 buckets="arn:aws:s3:::$2-*-$3"
+  # Every group carries the guardrails too, so an Allow added later (a managed policy) can't grant them.
+  local deny='{"Effect":"Deny","Action":['"$SHARING"'],"Resource":"*"}'
   local list='{"Effect":"Allow","Action":"s3:ListAllMyBuckets","Resource":"*"},
     {"Effect":"Allow","Action":["s3:ListBucket","s3:GetBucketLocation","s3:ListBucketMultipartUploads",
       "s3:GetBucketVersioning"],"Resource":"'$buckets'"}'
   case $group in
     read-write-objects) printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetObject",
       "s3:PutObject","s3:DeleteObject","s3:AbortMultipartUpload","s3:ListMultipartUploadParts"],
-      "Resource":"'$buckets'/*"}]}' ;;
-    read-only-buckets) printf '%s' '{"Version":"2012-10-17","Statement":['"$list"']}' ;;
+      "Resource":"'$buckets'/*"},'"$deny"']}' ;;
+    read-only-buckets) printf '%s' '{"Version":"2012-10-17","Statement":['"$list"','"$deny"']}' ;;
     read-write-buckets) printf '%s' '{"Version":"2012-10-17","Statement":['"$list"',
-      {"Effect":"Allow","Action":["s3:CreateBucket","s3:DeleteBucket"],"Resource":"'$buckets'"}]}' ;;
+      {"Effect":"Allow","Action":["s3:CreateBucket","s3:DeleteBucket"],"Resource":"'$buckets'"},'"$deny"']}' ;;
   esac
 }
 project() {
@@ -186,5 +231,6 @@ case ${1:-} in
   user) shift; user "$@" ;;
   account) shift; account "$@" ;;
   project) shift; project "$@" ;;
-  *) sed -n '2,15s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+  breakglass) shift; breakglass "$@" ;;
+  *) sed -n '2,18s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
 esac

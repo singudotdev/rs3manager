@@ -77,7 +77,7 @@ impl Root {
     pub fn identity(&self) -> Option<String> {
         self.session.as_ref()?;
         Some(match &self.access {
-            Access::Root => "account root".to_owned(),
+            Access::Root { .. } => "account root".to_owned(),
             Access::Policies { user, groups, .. } if groups.is_empty() => user.clone(),
             Access::Policies { user, groups, .. } => format!("{user} · {}", groups.join(", ")),
             Access::Unknown(_) => "permissions not readable".to_owned(),

@@ -15,11 +15,18 @@ const S3_FULL: &str = r#"{"Statement":[{"Effect":"Allow","Action":["s3:*","s3-ob
 const S3_READ_ONLY: &str =
     r#"{"Statement":[{"Effect":"Allow","Action":["s3:Get*","s3:List*","s3:Describe*"],"Resource":"*"}]}"#;
 
+/// The account root's own rights: everything in the account, before the explicit Denies its policies add.
+const ROOT: &str = r#"{"Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}"#;
+
 /// What the profile may do.
 #[derive(Debug, Clone)]
 pub enum Access {
-    /// The account's root user: everything in the account.
-    Root,
+    /// The account's root user: everything in the account but what an explicit Deny in its own policies refuses
+    /// (the platform team's guardrails, `docs/decisions/0005-*`).
+    Root {
+        /// [`ROOT`]'s statement and those of the root's policies.
+        statements: Vec<Statement>,
+    },
     /// An IAM user of the account, with the policies of its groups and its own.
     Policies {
         /// The user's name.
@@ -37,9 +44,8 @@ impl Access {
     /// What the policies say about `action` (e.g. `s3:PutObject`) on `bucket`, or on object `key` in it.
     pub fn decide(&self, action: &str, bucket: &str, key: Option<&str>) -> Decision {
         match self {
-            Self::Root => Decision::Allowed,
             Self::Unknown(_) => Decision::Unknown,
-            Self::Policies { statements, .. } => {
+            Self::Root { statements } | Self::Policies { statements, .. } => {
                 let resource = match key {
                     Some(key) => format!("arn:aws:s3:::{bucket}/{key}"),
                     None => format!("arn:aws:s3:::{bucket}"),
@@ -86,10 +92,6 @@ impl Session {
 async fn load(iam: &aws_sdk_iam::Client) -> Result<Access, S3Error> {
     let me = iam.get_user().send().await.map_err(map)?;
     let user = me.user().ok_or_else(|| S3Error::Internal("GetUser named no user".to_owned()))?;
-    // The account's root user is named by the account's own ARN, `arn:aws:iam::ACCOUNT:root`.
-    if user.arn().ends_with(":root") {
-        return Ok(Access::Root);
-    }
     let name = user.user_name().to_owned();
     let mut documents = Vec::new();
     for policy in iam.list_user_policies().user_name(&name).send().await.map_err(map)?.policy_names() {
@@ -98,6 +100,14 @@ async fn load(iam: &aws_sdk_iam::Client) -> Result<Access, S3Error> {
     }
     let attached = iam.list_attached_user_policies().user_name(&name).send().await.map_err(map)?;
     documents.extend(attached.attached_policies().iter().filter_map(|p| managed(p.policy_arn()?)));
+    // The account's root user is named by the account's own ARN, `arn:aws:iam::ACCOUNT:root`; it has no groups.
+    if user.arn().ends_with(":root") {
+        documents.push(ROOT.to_owned());
+        return Ok(match parse_all(&documents) {
+            Ok(statements) => Access::Root { statements },
+            Err(e) => Access::Unknown(format!("a policy of the account root couldn't be read: {e}")),
+        });
+    }
     let mut groups = Vec::new();
     for group in iam.list_groups_for_user().user_name(&name).send().await.map_err(map)?.groups() {
         let group = group.group_name().to_owned();
@@ -109,16 +119,20 @@ async fn load(iam: &aws_sdk_iam::Client) -> Result<Access, S3Error> {
         documents.extend(attached.attached_policies().iter().filter_map(|p| managed(p.policy_arn()?)));
         groups.push(group);
     }
-    let mut statements = Vec::new();
-    for doc in &documents {
-        match policy::parse(doc) {
-            Ok(parsed) => statements.extend(parsed),
-            // One unreadable policy would make every answer a guess; the gateway decides instead.
-            Err(e) => return Ok(Access::Unknown(format!("a policy of {name} couldn't be read: {e}"))),
-        }
-    }
+    let statements = match parse_all(&documents) {
+        Ok(statements) => statements,
+        Err(e) => return Ok(Access::Unknown(format!("a policy of {name} couldn't be read: {e}"))),
+    };
     tracing::info!(target: "r3manager::s3", user = %name, groups = ?groups, statements = statements.len(), "policies loaded");
     Ok(Access::Policies { user: name, groups, statements })
+}
+
+/// Every statement of `documents`. One unreadable policy fails them all, as it would make every answer a guess.
+fn parse_all(documents: &[String]) -> Result<Vec<Statement>, String> {
+    documents.iter().try_fold(Vec::new(), |mut all, doc| {
+        all.extend(policy::parse(doc)?);
+        Ok(all)
+    })
 }
 
 /// The document of AWS managed policy `arn` when it grants S3 rights; the others radosgw supports (IAM, SNS) grant

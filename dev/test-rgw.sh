@@ -21,5 +21,6 @@ keys() { # PREFIX < profile: exports PREFIX_ACCESS_KEY and PREFIX_SECRET_KEY
 keys R3M_TEST_PROD_ROOT < <(dev/rgw.sh account r3mtest-prod)
 keys R3M_TEST_PROD_RO < <(dev/rgw.sh project r3mtest prod tester ro)
 keys R3M_TEST_DEV_RW < <(dev/rgw.sh project r3mtest dev tester rw)
+dev/test-guardrails.sh
 cargo test -p r3manager-core --test rgw -- --ignored "$@"
 cargo test -p r3manager-app -- --ignored "$@"

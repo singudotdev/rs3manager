@@ -283,5 +283,9 @@ fn a_project_user_reads_its_own_policies() {
     assert!(rw.may("s3:DeleteBucket", "r3mtest-x-dev", None) && !rw.may("s3:DeleteBucket", "r3mtest-x-prod", None));
 
     let root = wait(session_as(&engine, &dir.path().join("root"), "R3M_TEST_PROD_ROOT").access()).unwrap();
-    assert!(matches!(root, Access::Root), "{root:?}");
+    assert!(matches!(root, Access::Root { .. }), "{root:?}");
+    // Everything in the account, but the guardrails `dev/rgw.sh account` puts on it.
+    assert!(root.may("s3:CreateBucket", "anything-at-all", None) && root.may("s3:DeleteObject", "b", Some("k")));
+    assert!(!root.may("s3:PutBucketPolicy", "r3mtest-web-prod", None), "no bucket policies, even for the root");
+    assert_eq!(root.bucket_patterns(), None, "any name may be tried");
 }
