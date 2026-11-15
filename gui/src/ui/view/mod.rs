@@ -41,10 +41,8 @@ impl Root {
             Some(Modal::Share(_)) => self.copy_share_link(cx),
             Some(Modal::ProfileMenu(_)) => self.pick_highlighted(window, cx),
             // Enter takes the safe choice: the new files only, and nothing when there are none.
-            Some(Modal::Replace { jobs, existing }) if jobs.len() > existing.len() => {
-                self.replace_chosen(false, window, cx);
-            }
-            Some(Modal::Replace { .. } | Modal::Profiles(ProfilesDialog { form: None })) | None => {}
+            Some(Modal::Replace { .. }) => self.replace_chosen(false, window, cx),
+            Some(Modal::Profiles(ProfilesDialog { form: None })) | None => {}
         }
     }
 

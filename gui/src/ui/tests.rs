@@ -275,7 +275,8 @@ fn creating_renaming_and_deleting_from_the_window(cx: &mut TestAppContext) {
     };
     assert_eq!(view.read_with(cx, |r, _| uploaded(r)), "dropped/sub/b.json");
 
-    // When every file is there, enter overwrites nothing and skipping isn't offered.
+    // When every file is there, skipping is still offered (a folder uploaded again is the usual case), and enter
+    // takes it: nothing goes up.
     view.update(cx, |r, cx| r.upload_paths(vec![local.clone()], cx));
     until(
         cx,
@@ -284,10 +285,10 @@ fn creating_renaming_and_deleting_from_the_window(cx: &mut TestAppContext) {
         |r| matches!(&r.modal, Some(Modal::Replace { jobs, existing }) if jobs.len() == 2 && existing.len() == 2),
     );
     cx.run_until_parked();
-    assert!(cx.debug_bounds("button Skip 2").is_none());
+    assert!(cx.debug_bounds("button Skip 2").is_some());
     cx.simulate_keystrokes("enter");
-    assert!(view.read_with(cx, |r, _| matches!(r.modal, Some(Modal::Replace { .. }))), "enter doesn't overwrite");
-    cx.simulate_keystrokes("escape");
+    until(cx, &view, "the skipped upload", |r| r.modal.is_none());
+    assert_eq!(view.read_with(cx, |r, _| r.transfers.items().len()), 2, "enter uploads nothing");
 
     // Overwriting uploads them all.
     view.update(cx, |r, cx| r.upload_paths(vec![local], cx));

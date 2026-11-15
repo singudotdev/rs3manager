@@ -143,10 +143,11 @@ impl Root {
 
     /// The question before an upload of `total` files of which `existing` are already there. Both answers name what
     /// they do to those files, the ones listed ("Overwrite 3", "Skip 3"), so neither reads as a choice about the
-    /// rest; skipping isn't offered when every file is there, as it would upload nothing (that's Cancel).
+    /// rest. Skipping stays even when every file is there and it uploads nothing, since uploading a folder again is
+    /// the common case and a dialog without the safe answer reads as "overwrite or give up".
     fn replace_dialog(total: usize, existing: &[String], theme: &Theme, cx: &mut Context<Self>) -> Div {
         const SHOWN: usize = 6;
-        let (count, new) = (existing.len(), total - existing.len());
+        let count = existing.len();
         let plural = |n: usize| if n == 1 { "" } else { "s" };
         let title = match (count, total) {
             (1, 1) => format!("{} is already there", base_name(&existing[0])),
@@ -178,12 +179,10 @@ impl Root {
                         button("overwrite", format!("Overwrite {count}"), Kind::Danger, false, theme)
                             .on_click(cx.listener(|this, _, window, cx| this.replace_chosen(true, window, cx))),
                     )
-                    .when(new > 0, |d| {
-                        d.child(
-                            button("skip", format!("Skip {count}"), Kind::Primary, false, theme)
-                                .on_click(cx.listener(|this, _, window, cx| this.replace_chosen(false, window, cx))),
-                        )
-                    }),
+                    .child(
+                        button("skip", format!("Skip {count}"), Kind::Primary, false, theme)
+                            .on_click(cx.listener(|this, _, window, cx| this.replace_chosen(false, window, cx))),
+                    ),
             )
     }
 
