@@ -17,7 +17,8 @@
 #   dev/rgw.sh logs               follow its log
 #
 # On a real cluster's node, where radosgw-admin runs directly: RGW_ADMIN=radosgw-admin RGW_ENDPOINT=URL dev/rgw.sh account NAME
-# `project` also calls the IAM API as the account's root user: with `aws` if installed, else the amazon/aws-cli image.
+# IAM calls go through the API (with `aws` if installed, else the amazon/aws-cli image): as a throwaway root made with
+# radosgw-admin to set the guardrails and create admins, as an admin for `project`; never as the root, which can't.
 #
 # It's Ceph's own demo image (Squid), objects stored in RADOS on one OSD, so copies, multipart uploads, versions and
 # accounts behave as on the production cluster: the standalone radosgw on dbstore got those wrong (see
@@ -109,7 +110,7 @@ account() {
   fi
   local access secret
   { read -r access; read -r secret; } < <(admin user info --uid="$uid" | keys_of)
-  guard_root "$access" "$secret" "$id" "$uid" "$name"
+  guard_root "$access" "$secret" "$uid" "$name"
   printf '%s\n%s\n' "$access" "$secret" | print_profile "$name"
 }
 
@@ -118,36 +119,64 @@ account() {
 # let anyone grant access, even public, outside them.
 SHARING='"s3:PutBucketPolicy","s3:DeleteBucketPolicy","s3:PutBucketAcl","s3:PutObjectAcl","s3:PutObjectVersionAcl"'
 
-# Puts the guardrails on root user $4 (keys $1 $2) of account $5 (id $3), unless it has them: Deny the sharing
-# actions, and Deny changing its own policies, without which it would just delete them. Once on, only another root
-# can lift them (see `breakglass`), so they're set once and not rewritten.
-guard_root() {
-  local access=$1 secret=$2 id=$3 uid=$4 name=$5
-  if aws_as "$access" "$secret" iam list-user-policies --user-name "$uid" --output text | grep -qw guardrails; then
-    return
-  fi
-  aws_as "$access" "$secret" iam put-user-policy --user-name "$uid" --policy-name guardrails --policy-document \
-    '{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":['"$SHARING"'],"Resource":"*"},
-      {"Effect":"Deny","Action":["iam:PutUserPolicy","iam:DeleteUserPolicy","iam:AttachUserPolicy",
-      "iam:DetachUserPolicy"],"Resource":"arn:aws:iam::'"$id:user/$uid"'"}]}' >/dev/null \
-    || die "couldn't put the guardrails on the root of $name"
+# What the root may not do in IAM: any write. It reads (r3manager shows it what it may do) and works in S3, but users,
+# groups, policies and keys change only through the devsecops admins, so its keys can't hand out rights (#32). The
+# prefixes of every write in radosgw 19.2's IAM (src/rgw/rgw_iam_policy.cc); it refuses a pattern matching none.
+ROOT_IAM_WRITES='"iam:Create*","iam:Delete*","iam:Update*","iam:Put*","iam:Attach*","iam:Detach*","iam:Add*",
+  "iam:Remove*","iam:Tag*","iam:Untag*","iam:Modify*"'
+
+# The guardrails policy of the root of an account: Deny the sharing actions and every IAM write. The latter also keeps
+# it from deleting this policy, so only another root lifts it (see `breakglass`).
+guardrails() {
+  printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":['"$SHARING"'],"Resource":"*"},
+    {"Effect":"Deny","Action":['"$ROOT_IAM_WRITES"'],"Resource":"*"}]}' | tr -d '\n'
 }
 
-# Lifts the guardrails of account NAME's root: a second root, made for the purpose and removed after, deletes them.
-breakglass() {
-  local name=${1:?usage: dev/rgw.sh breakglass NAME} id uid temp access secret
-  uid="$name-root"
-  temp="$name-breakglass-$$"
+# Runs "$2 ACCESS SECRET ${@:3}" as a throwaway second root of account $1, removed afterwards whatever happened: a
+# root isn't bound by another root's policies, so this is how the guardrails are set or lifted and admins created.
+# Needs radosgw-admin, which only devsecops have on the cluster. Returns what the command returned.
+as_temp_root() {
+  local name=$1 id temp access secret status=0
+  shift
   id=$(admin account get --account-name="$name" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])') \
     || die "no account '$name'"
+  temp="$name-breakglass-$$"
   { read -r access; read -r secret; } < <(admin user create --uid="$temp" --display-name="$temp" --account-id="$id" \
     --account-root --gen-access-key --gen-secret | keys_of)
-  local lifted=0
-  aws_as "$access" "$secret" iam delete-user-policy --user-name "$uid" --policy-name guardrails >/dev/null && lifted=1
-  # Removed whatever happened: a spare root without guardrails is what this is meant to avoid.
-  admin user rm --uid="$temp" >/dev/null || die "couldn't remove the break-glass root $temp: remove it by hand"
-  [[ $lifted == 1 ]] || die "couldn't lift the guardrails of $uid"
-  echo "guardrails lifted from $uid; 'dev/rgw.sh account $name' puts them back"
+  # In a subshell, so a `die` in the command ends only it and the throwaway root is still removed.
+  ("$1" "$access" "$secret" "${@:2}") || status=$?
+  # A spare root without guardrails is what the guardrails are meant to avoid.
+  admin user rm --uid="$temp" >/dev/null || die "couldn't remove the throwaway root $temp: remove it by hand"
+  return $status
+}
+
+put_guardrails() { aws_as "$1" "$2" iam put-user-policy --user-name "$3" --policy-name guardrails \
+  --policy-document "$(guardrails)" >/dev/null; }
+drop_guardrails() { aws_as "$1" "$2" iam delete-user-policy --user-name "$3" --policy-name guardrails >/dev/null; }
+
+# Puts the guardrails on root user $3 (keys $1 $2) of account $4, unless it has them as they are in this script: an
+# account set up before a change gets the new ones.
+guard_root() {
+  local access=$1 secret=$2 uid=$3 name=$4 current
+  current=$(aws_as "$access" "$secret" iam get-user-policy --user-name "$uid" --policy-name guardrails \
+    --query PolicyDocument --output json 2>/dev/null) || current=null
+  if python3 -c '
+import json, sys, urllib.parse
+doc = json.loads(sys.argv[1])
+# The CLI hands the document back decoded as JSON, or as the string radosgw stored.
+if isinstance(doc, str):
+    doc = json.loads(urllib.parse.unquote(doc))
+sys.exit(doc != json.loads(sys.argv[2]))' "$current" "$(guardrails)" 2>/dev/null; then
+    return
+  fi
+  as_temp_root "$name" put_guardrails "$uid" || die "couldn't put the guardrails on the root of $name"
+}
+
+# Lifts the guardrails of account NAME's root, through a throwaway second root.
+breakglass() {
+  local name=${1:?usage: dev/rgw.sh breakglass NAME}
+  as_temp_root "$name" drop_guardrails "$name-root" || die "couldn't lift the guardrails of $name-root"
+  echo "guardrails lifted from $name-root; 'dev/rgw.sh account $name' puts them back"
 }
 
 # The AWS CLI as the user whose keys are $1 and $2, against the gateway; the rest are its arguments.
@@ -200,13 +229,20 @@ print(key); print(next(k["secret_key"] for k in json.load(sys.stdin)["keys"] if 
 profile_keys() { sed -n 's/^aws_access_key_id = //p; s/^aws_secret_access_key = //p'; }
 
 # Creates devsecops admin $2 in account $1 (or reuses it) and prints its profile. Admins live under IAM path
-# /platform/ and administer the account with their own keys, the root's kept for emergencies (docs/decisions/0005-*).
+# /platform/ and administer the account with their own keys; the root can't write IAM, so a throwaway root creates
+# them, and the root's keys are kept for emergencies (docs/decisions/0005-*).
 # Their policy lets them do everything but the sharing actions and touching the root or any admin: their policies,
 # keys, groups or the users themselves, so no admin lifts a guardrail or takes another's place. The path covers admins
 # added later without rewriting anyone's policy.
 platform_admin() {
-  local account=${1:?usage: dev/rgw.sh admin ACCOUNT USER} user=${2:?USER} id access secret
-  { read -r access; read -r secret; } < <(account "$account" | profile_keys)
+  local account=${1:?usage: dev/rgw.sh admin ACCOUNT USER} user=${2:?USER}
+  account "$account" >/dev/null
+  as_temp_root "$account" make_admin "$account" "$user"
+}
+
+# platform_admin's IAM calls, with the keys $1 $2 of a throwaway root of account $3; $4 is the admin.
+make_admin() {
+  local access=$1 secret=$2 account=$3 user=$4 id
   id=$(admin account get --account-name="$account" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
   local iam=(aws_as "$access" "$secret" iam) arn="arn:aws:iam::$id:user"
   "${iam[@]}" create-user --user-name "$user" --path /platform/ >/dev/null 2>&1 || true
