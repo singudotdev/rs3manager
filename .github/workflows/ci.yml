@@ -37,6 +37,10 @@ jobs:
       - run: cargo fmt --all --check
       # The lint policy (pedantic, no unsafe) lives in Cargo.toml; here any warning fails the build.
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # Broken intra-doc links and malformed doc comments.
+      - run: cargo doc --workspace --no-deps --document-private-items --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
 
   deny:
     name: licenses + advisories
