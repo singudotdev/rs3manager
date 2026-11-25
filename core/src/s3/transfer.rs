@@ -1,6 +1,7 @@
 //! Uploads and downloads between local files and objects, with progress the UI reads while they run and a flag to
 //! cancel them. Large files go up in parts, several at a time; downloads land in a temporary file renamed into place
-//! once complete, so a cancelled or failed one never leaves a truncated file under the real name.
+//! once complete, so a cancelled or failed one never leaves a truncated file under the real name. One that was cancelled
+//! or lost its connection keeps what it wrote, and the next download of the same object continues from there.
 
 use super::error::map;
 use super::names::check_key;
@@ -125,12 +126,15 @@ impl Session {
         self.spawn(|client| async move {
             let partial = partial_path(&dest);
             let result = download(&client, &bucket, &key, &dest, &partial, &progress).await;
-            if result.is_err() {
-                let _ = tokio::fs::remove_file(&partial).await;
+            // What was written stays for the next try after a cancel or a lost connection; any other failure
+            // (denied, gone, a full disk) would only fail again.
+            if result.is_err() && !matches!(result, Err(S3Error::Cancelled | S3Error::Network(_))) {
+                forget(&partial).await;
             }
             result
         })
     }
+
     /// Which of `keys` already exist in `bucket`, so an upload can ask before replacing them (S3 replaces silently).
     /// One listing per folder the keys go into, not a request per key; a folder found empty skips every folder below
     /// it, so a new folder tree costs one listing. Keys written by someone else after this answered aren't seen.
@@ -291,7 +295,29 @@ fn partial_path(dest: &Path) -> PathBuf {
     dest.with_file_name(format!(".{name}.rs3manager-part"))
 }
 
-/// Streams object `key` into `partial`, then renames it to `dest`.
+/// The file holding the `ETag` of the object `partial` is a piece of, so a later download only continues one that's
+/// still the same object.
+fn etag_path(partial: &Path) -> PathBuf {
+    let mut name = partial.as_os_str().to_owned();
+    name.push(".etag");
+    PathBuf::from(name)
+}
+
+/// Removes `partial` and its `ETag` file.
+async fn forget(partial: &Path) {
+    let _ = tokio::fs::remove_file(partial).await;
+    let _ = tokio::fs::remove_file(etag_path(partial)).await;
+}
+
+/// How much of the object an earlier try left in `partial`, with the `ETag` it had then, if both are still there.
+async fn resumable(partial: &Path) -> Option<(u64, String)> {
+    let len = tokio::fs::metadata(partial).await.ok()?.len();
+    let etag = tokio::fs::read_to_string(etag_path(partial)).await.ok()?;
+    (len > 0 && !etag.is_empty()).then_some((len, etag))
+}
+
+/// Streams object `key` into `partial`, then renames it to `dest`. Continues what an earlier try left in `partial`
+/// when the object is unchanged (`If-Match` its `ETag`) and the gateway honors the range; otherwise starts over.
 async fn download(
     client: &Client,
     bucket: &str,
@@ -301,12 +327,31 @@ async fn download(
     progress: &Progress,
 ) -> Result<(), S3Error> {
     progress.check()?;
-    let mut out = client.get_object().bucket(bucket).key(key).send().await.map_err(map)?;
-    progress.total.store(size(out.content_length()), Ordering::Relaxed);
+    let mut have = 0;
+    let mut out = None;
+    if let Some((len, etag)) = resumable(partial).await {
+        let request = client.get_object().bucket(bucket).key(key).range(format!("bytes={len}-")).if_match(etag);
+        if let Ok(resumed) = request.send().await {
+            have = len;
+            out = Some(resumed);
+        }
+    }
+    let mut out = match out {
+        Some(out) => out,
+        None => client.get_object().bucket(bucket).key(key).send().await.map_err(map)?,
+    };
+    progress.total.store(have + size(out.content_length()), Ordering::Relaxed);
+    progress.done.store(have, Ordering::Relaxed);
     if let Some(dir) = dest.parent().filter(|d| !d.as_os_str().is_empty()) {
         tokio::fs::create_dir_all(dir).await.map_err(|e| S3Error::io(dir, e))?;
     }
-    let mut file = tokio::fs::File::create(partial).await.map_err(|e| S3Error::io(partial, e))?;
+    let mut file = if have > 0 {
+        tokio::fs::OpenOptions::new().append(true).open(partial).await.map_err(|e| S3Error::io(partial, e))?
+    } else {
+        let etag = out.e_tag().unwrap_or_default();
+        tokio::fs::write(etag_path(partial), etag).await.map_err(|e| S3Error::io(partial, e))?;
+        tokio::fs::File::create(partial).await.map_err(|e| S3Error::io(partial, e))?
+    };
     while let Some(chunk) = out.body.next().await {
         progress.check()?;
         let chunk = chunk.map_err(|e| S3Error::Network(format!("reading {key}: {e}")))?;
@@ -316,7 +361,9 @@ async fn download(
     file.flush().await.map_err(|e| S3Error::io(partial, e))?;
     file.sync_all().await.map_err(|e| S3Error::io(partial, e))?;
     drop(file);
-    tokio::fs::rename(partial, dest).await.map_err(|e| S3Error::io(dest, e))
+    tokio::fs::rename(partial, dest).await.map_err(|e| S3Error::io(dest, e))?;
+    let _ = tokio::fs::remove_file(etag_path(partial)).await;
+    Ok(())
 }
 
 /// Every file under `dir`, with its path relative to `dir` as `/`-separated key segments, sorted: what uploading a

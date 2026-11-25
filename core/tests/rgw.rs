@@ -178,6 +178,49 @@ fn fetch(url: &str) -> (u16, Vec<u8>) {
 
 #[test]
 #[ignore = "needs a radosgw: dev/test-rgw.sh"]
+fn an_interrupted_download_continues_when_the_object_is_unchanged() {
+    let (_engine, session, bucket, dir) = setup("resume");
+    let contents: Vec<u8> = (0..4u32 * 1024 * 1024 / 4).flat_map(u32::to_le_bytes).collect();
+    let path = dir.path().join("src.bin");
+    std::fs::write(&path, &contents).unwrap();
+    wait(session.upload(&bucket, "r.bin", &path, Headers::default(), Progress::new())).unwrap();
+    let etag = wait(session.head(&bucket, "r.bin")).unwrap().etag.unwrap();
+    let dest = dir.path().join("r.bin");
+    let partial = dir.path().join(".r.bin.rs3manager-part");
+    let sidecar = dir.path().join(".r.bin.rs3manager-part.etag");
+
+    // What an earlier try left: zeros where the object has data, so only a continued download keeps them.
+    let half = contents.len() / 2;
+    std::fs::write(&partial, vec![0u8; half]).unwrap();
+    std::fs::write(&sidecar, format!("\"{etag}\"")).unwrap();
+    let progress = Progress::new();
+    wait(session.download(&bucket, "r.bin", &dest, progress.clone())).unwrap();
+    let got = std::fs::read(&dest).unwrap();
+    assert!(got[..half].iter().all(|b| *b == 0), "the first half was fetched again");
+    assert!(got[half..] == contents[half..], "the rest differs");
+    assert_eq!(progress.get(), (contents.len() as u64, contents.len() as u64));
+    assert!(!partial.exists() && !sidecar.exists(), "the pieces are left behind");
+
+    // The same leftovers of another object (a different ETag) are not continued.
+    std::fs::write(&partial, vec![0u8; half]).unwrap();
+    std::fs::write(&sidecar, "\"not-this-object\"").unwrap();
+    wait(session.download(&bucket, "r.bin", &dest, Progress::new())).unwrap();
+    assert!(std::fs::read(&dest).unwrap() == contents, "a stale partial was continued");
+
+    // A cancelled download keeps its piece for the next try; a missing object leaves nothing.
+    let cancelled = Progress::new();
+    cancelled.cancel();
+    let result = wait(session.download(&bucket, "r.bin", &dir.path().join("c.bin"), cancelled));
+    assert!(matches!(result, Err(S3Error::Cancelled)), "{result:?}");
+    let missing = dir.path().join("missing.bin");
+    assert!(matches!(wait(session.download(&bucket, "nope", &missing, Progress::new())), Err(S3Error::NotFound(_))));
+    assert!(!dir.path().join(".missing.bin.rs3manager-part").exists());
+    assert!(!dir.path().join(".missing.bin.rs3manager-part.etag").exists());
+    wait(session.delete_bucket(&bucket, true)).unwrap();
+}
+
+#[test]
+#[ignore = "needs a radosgw: dev/test-rgw.sh"]
 fn shared_links_download_without_credentials_until_they_expire() {
     let (_engine, session, bucket, dir) = setup("share");
     // A key that needs escaping in the URL, as a signature over the wrong encoding is refused.
