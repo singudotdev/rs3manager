@@ -33,7 +33,7 @@ fn uploads_for(bucket: &str, prefix: &str, paths: &[PathBuf]) -> (Vec<Job>, Vec<
     let mut jobs = Vec::new();
     let mut errors = Vec::new();
     for path in paths {
-        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
         if path.is_dir() {
             match walk(path) {
                 Ok(files) => {
