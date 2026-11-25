@@ -39,3 +39,10 @@ branches are never rewritten.
 Dependabot opens weekly pull requests against `develop` (compatible bumps grouped). GPUI is pinned to one Zed tag with
 the patches in `Cargo.toml` and moves by hand. Advisories that no release fixes are ignored in `deny.toml`, each with
 its reason, and checked again when the crate that pulls them in moves.
+
+## Releases
+
+Pushing a tag `vX.Y.Z` that matches `version` in `Cargo.toml` runs `.github/workflows/release.yml`: it builds the app in
+release mode on Linux, packages it with `.github/package.sh` (binary, launcher entry, icon, licenses, SHA-256) and
+publishes a GitHub release with generated notes. A pull request changing the workflow or the script builds and
+packages the same way without publishing.

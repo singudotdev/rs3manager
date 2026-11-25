@@ -76,6 +76,9 @@ On Linux GPUI needs the Wayland/X11, Vulkan and font development packages Zed li
 
 ### Installing on Linux
 
+From a [release](https://github.com/singudotdev/rs3manager/releases): unpack `rs3manager-VERSION-linux-x86_64.tar.gz`
+(check it with its `.sha256`) and copy the files as below, or build from source:
+
 Into `~/.local`, with a launcher entry and icon (the window's app id is `rs3manager`, so docks group it under them):
 
 ```sh
