@@ -1,6 +1,6 @@
 [package]
-name = "r3manager-app"
-description = "r3manager: a desktop app for developers to manage the buckets and objects of the radosgw accounts behind their AWS CLI profiles."
+name = "rs3manager-app"
+description = "rs3manager: a desktop app for developers to manage the buckets and objects of the radosgw accounts behind their AWS CLI profiles."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,11 +8,11 @@ repository.workspace = true
 publish = false
 
 [[bin]]
-name = "r3manager"
+name = "rs3manager"
 path = "src/main.rs"
 
 [dependencies]
-r3manager-core.workspace = true
+rs3manager-core.workspace = true
 anyhow = "1"
 # Local times for objects' dates.
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }

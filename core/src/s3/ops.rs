@@ -1,7 +1,7 @@
 //! Buckets, folder listings, object details and headers, rename and delete: every operation but transfers.
 //!
 //! Folders are S3's: a common prefix ending in `/` when listing with that delimiter, plus the empty marker object the
-//! console tools (`MinIO`'s, the AWS console) create for an empty folder, which r3manager creates too.
+//! console tools (`MinIO`'s, the AWS console) create for an empty folder, which rs3manager creates too.
 
 use super::error::map;
 use super::names::{check_bucket_name, check_key, copy_source};

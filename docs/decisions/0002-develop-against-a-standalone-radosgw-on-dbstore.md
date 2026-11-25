@@ -28,4 +28,4 @@ Tried:
 
 - The S3 code that answers is RGW's own; the storage under it is not RADOS. What depends on pools, placement or
   accounts (account-owned buckets, IAM) can only be checked on the real cluster.
-- For the buckets and objects r3manager works on, a plain user's keys behave as an account root user's do.
+- For the buckets and objects rs3manager works on, a plain user's keys behave as an account root user's do.

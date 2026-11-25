@@ -8,7 +8,7 @@ use super::super::widgets::{Kind, button, label};
 use crate::state::format::{base_name, size, when};
 use crate::state::transfers::{Job, Status, Transfer};
 use gpui::{Context, Div, Stateful, div, prelude::*, px, relative};
-use r3manager_core::profiles::Credentials;
+use rs3manager_core::profiles::Credentials;
 use std::fmt::Write as _;
 
 impl Root {

@@ -4,7 +4,7 @@
 use super::root::Root;
 use crate::state::browser::Row;
 use gpui::Context;
-use r3manager_core::s3::Access;
+use rs3manager_core::s3::Access;
 
 /// Reading an object: download, preview, share.
 pub const READ: &[&str] = &["s3:GetObject"];
@@ -23,11 +23,11 @@ impl Root {
     /// each, so buckets out of reach aren't shown either way.
     pub fn load_access(&mut self, cx: &mut Context<Self>) {
         self.buckets_loading = true;
-        self.run(cx, r3manager_core::s3::Session::access, |this, result, cx| {
+        self.run(cx, rs3manager_core::s3::Session::access, |this, result, cx| {
             // `access` never fails; an error here is the session's own (cancelled).
             this.access = result.unwrap_or_else(|e| Access::Unknown(e.to_string()));
             if let Access::Unknown(why) = &this.access {
-                tracing::info!(target: "r3manager::ui", reason = %why, "permissions unknown, asking the gateway");
+                tracing::info!(target: "rs3manager::ui", reason = %why, "permissions unknown, asking the gateway");
             }
             this.load_buckets(cx);
         });

@@ -43,7 +43,7 @@ root s3api put-bucket-policy --bucket "$bucket" --policy "$public" && fail "acco
   || ok "account puts them back"
 root iam create-user --user-name by-root && fail "account didn't put back the IAM deny" \
   || ok "account puts back the IAM deny"
-[[ -z $(podman exec "${RGW_CONTAINER:-r3manager-ceph}" radosgw-admin user list 2>/dev/null | grep breakglass || true) ]] \
+[[ -z $(podman exec "${RGW_CONTAINER:-rs3manager-ceph}" radosgw-admin user list 2>/dev/null | grep breakglass || true) ]] \
   && ok "no break-glass root left" || fail "a break-glass root was left behind"
 
 # Devsecops admins: ds-a sets up a project with its own keys, ds-b is another admin it must leave alone.

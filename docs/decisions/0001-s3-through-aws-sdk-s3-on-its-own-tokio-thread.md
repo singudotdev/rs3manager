@@ -4,7 +4,7 @@ Date: 2026-11-03. Status: accepted.
 
 ## Context
 
-r3manager lets developers manage the buckets and objects of the radosgw account behind each of their AWS CLI
+rs3manager lets developers manage the buckets and objects of the radosgw account behind each of their AWS CLI
 profiles. The client needs SigV4, path-style addressing (the gateway has no wildcard DNS), ListObjectsV2 pagination with
 a delimiter, multipart upload, copy and metadata, and it reads the profiles from the AWS CLI's `~/.aws` files,
 `endpoint_url` included. GPUI runs its own executor, not tokio.

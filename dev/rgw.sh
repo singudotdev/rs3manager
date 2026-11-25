@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A Ceph cluster with radosgw to develop r3manager against, and the identities developers connect with.
+# A Ceph cluster with radosgw to develop rs3manager against, and the identities developers connect with.
 #
 #   dev/rgw.sh up                 start it (podman): one monitor, manager, OSD and radosgw; data kept in volumes
 #   dev/rgw.sh user NAME          create an S3 user (or reuse it), print its AWS CLI profile
@@ -27,7 +27,7 @@
 set -euo pipefail
 
 IMAGE=${RGW_IMAGE:-quay.io/ceph/demo:latest-squid}
-NAME=${RGW_CONTAINER:-r3manager-ceph}
+NAME=${RGW_CONTAINER:-rs3manager-ceph}
 PORT=${RGW_PORT:-7480}
 ENDPOINT=${RGW_ENDPOINT:-http://127.0.0.1:$PORT}
 
@@ -119,7 +119,7 @@ account() {
 # let anyone grant access, even public, outside them.
 SHARING='"s3:PutBucketPolicy","s3:DeleteBucketPolicy","s3:PutBucketAcl","s3:PutObjectAcl","s3:PutObjectVersionAcl"'
 
-# What the root may not do in IAM: any write. It reads (r3manager shows it what it may do) and works in S3, but users,
+# What the root may not do in IAM: any write. It reads (rs3manager shows it what it may do) and works in S3, but users,
 # groups, policies and keys change only through the devsecops admins, so its keys can't hand out rights (#32). The
 # prefixes of every write in radosgw 19.2's IAM (src/rgw/rgw_iam_policy.cc); it refuses a pattern matching none.
 ROOT_IAM_WRITES='"iam:Create*","iam:Delete*","iam:Update*","iam:Put*","iam:Attach*","iam:Detach*","iam:Add*",
@@ -280,7 +280,7 @@ project() {
   done
   # Switching rw and ro takes the user out of the other group, which would otherwise still grant its rights.
   "${iam[@]}" remove-user-from-group --user-name "$user" --group-name "$other" >/dev/null 2>&1 || true
-  # Reading its own policies lets r3manager show only what the user may do. radosgw refuses policy variables
+  # Reading its own policies lets rs3manager show only what the user may do. radosgw refuses policy variables
   # (${aws:username}) in IAM resources, so the ARNs are written out per user.
   local id iam_arn
   id=$(admin account get --account-name="$account" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')

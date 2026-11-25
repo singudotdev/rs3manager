@@ -2,7 +2,7 @@
 resolver = "3"
 members = ["core", "gui"]
 # `cargo build` / `cargo test` at the top cover the core only, which builds without GPUI. The app needs
-# `-p r3manager-app` or `--workspace`.
+# `-p rs3manager-app` or `--workspace`.
 default-members = ["core"]
 
 [workspace.package]
@@ -10,10 +10,10 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
 license = "AGPL-3.0-only"
-repository = "https://github.com/singudotdev/r3manager"
+repository = "https://github.com/singudotdev/rs3manager"
 
 [workspace.dependencies]
-r3manager-core = { path = "core", version = "0.1.0" }
+rs3manager-core = { path = "core", version = "0.1.0" }
 thiserror = "2"
 tempfile = "3.27"
 

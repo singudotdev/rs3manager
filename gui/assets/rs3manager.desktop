@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=r3manager
+Name=rs3manager
 GenericName=S3 Browser
 Comment=Browse, upload, download and share the buckets and objects of your radosgw account
-Exec=r3manager
-Icon=r3manager
+Exec=rs3manager
+Icon=rs3manager
 Terminal=false
 Categories=Network;FileTransfer;
 Keywords=S3;Ceph;radosgw;bucket;object;storage;
-StartupWMClass=r3manager
+StartupWMClass=rs3manager

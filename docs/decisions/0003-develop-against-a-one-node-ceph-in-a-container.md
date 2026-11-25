@@ -12,7 +12,7 @@ The official AWS CLI reproduced each failure against that gateway:
 - a 40 MB file uploaded in parts by `aws s3 cp` came back with different bytes.
 
 dbstore also has no [accounts](https://docs.ceph.com/en/squid/radosgw/account/), which is how developers will connect.
-r3manager renames and edits headers by copying, and uploads large files in parts, so that gateway can't tell whether
+rs3manager renames and edits headers by copying, and uploads large files in parts, so that gateway can't tell whether
 the app works.
 
 Ceph's own demo image, `quay.io/ceph/demo:latest-squid` (Ceph 19.2.0), runs a monitor, manager, one OSD and radosgw

@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 dev/rgw.sh up >/dev/null
-profile=$(dev/rgw.sh account r3manager-test)
+profile=$(dev/rgw.sh account rs3manager-test)
 R3M_TEST_ENDPOINT=$(sed -n 's/^endpoint_url = //p' <<<"$profile")
 R3M_TEST_ACCESS_KEY=$(sed -n 's/^aws_access_key_id = //p' <<<"$profile")
 R3M_TEST_SECRET_KEY=$(sed -n 's/^aws_secret_access_key = //p' <<<"$profile")
@@ -22,5 +22,5 @@ keys R3M_TEST_PROD_ROOT < <(dev/rgw.sh account r3mtest-prod)
 keys R3M_TEST_PROD_RO < <(dev/rgw.sh project r3mtest prod tester ro)
 keys R3M_TEST_DEV_RW < <(dev/rgw.sh project r3mtest dev tester rw)
 dev/test-guardrails.sh
-cargo test -p r3manager-core --test rgw -- --ignored "$@"
-cargo test -p r3manager-app -- --ignored "$@"
+cargo test -p rs3manager-core --test rgw -- --ignored "$@"
+cargo test -p rs3manager-app -- --ignored "$@"

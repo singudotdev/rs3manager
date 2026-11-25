@@ -18,7 +18,7 @@ use tokio::io::AsyncWriteExt as _;
 /// Files up to this size go up in one `PutObject`; larger ones in parts.
 const MULTIPART_THRESHOLD: u64 = 16 * 1024 * 1024;
 
-/// The smallest part r3manager sends: S3's minimum is 5 MiB, and fewer, larger requests go faster.
+/// The smallest part rs3manager sends: S3's minimum is 5 MiB, and fewer, larger requests go faster.
 const MIN_PART: u64 = 8 * 1024 * 1024;
 
 /// S3's limit of parts in one upload.
@@ -288,7 +288,7 @@ impl Upload {
 /// Where a download to `dest` is written until complete: beside it, hidden, so the rename into place is atomic.
 fn partial_path(dest: &Path) -> PathBuf {
     let name = dest.file_name().map_or_else(|| "download".into(), |n| n.to_string_lossy());
-    dest.with_file_name(format!(".{name}.r3manager-part"))
+    dest.with_file_name(format!(".{name}.rs3manager-part"))
 }
 
 /// Streams object `key` into `partial`, then renames it to `dest`.

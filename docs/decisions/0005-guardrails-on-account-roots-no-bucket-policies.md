@@ -39,7 +39,7 @@ the board). Their admin users outside accounts can't do this: verified, every IA
 user with no account answers `MethodNotAllowed`, as IAM acts on the caller's account; and radosgw 19.2 has no
 `AdministratorAccess` managed policy, so `platform-admin` is inline.
 
-r3manager reads the root's own policies too: the root may do everything in its account but what they deny.
+rs3manager reads the root's own policies too: the root may do everything in its account but what they deny.
 
 ## Consequences
 

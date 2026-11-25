@@ -7,7 +7,7 @@ use super::root::{Confirmed, Modal, Root};
 use gpui::{
     AppContext as _, AsyncApp, Context, Entity, Focusable as _, SharedString, Subscription, WeakEntity, Window,
 };
-use r3manager_core::profiles::{Credentials, Profile, ProfileEdit};
+use rs3manager_core::profiles::{Credentials, Profile, ProfileEdit};
 
 /// The dropdown under the profile button: a search field and the profiles it matches.
 pub struct ProfileMenu {

@@ -3,7 +3,7 @@
 //! user moved on) is dropped instead of overwriting the folder now shown.
 
 use super::format::name_in;
-use r3manager_core::s3::{ObjectEntry, Page};
+use rs3manager_core::s3::{ObjectEntry, Page};
 use std::collections::BTreeSet;
 
 /// A row: a folder (its full prefix, ending in `/`) or an object.

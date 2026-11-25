@@ -1,6 +1,6 @@
 //! The AWS CLI's [shared config and credentials files](https://docs.aws.amazon.com/sdkref/latest/guide/file-format.html)
 //! as their lines, so editing one key of one section leaves every other byte as it was: comments, order, blank lines
-//! and the settings r3manager doesn't know (sso, `credential_process`, `services` sections and their nested values).
+//! and the settings rs3manager doesn't know (sso, `credential_process`, `services` sections and their nested values).
 
 /// A file's lines, and where each section starts. Lines keep their text exactly; only a whole file's trailing newline
 /// is normalized when written.

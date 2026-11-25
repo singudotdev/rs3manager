@@ -7,8 +7,8 @@ use super::root::{Confirmed, Modal, Prompted, Root};
 use crate::state::browser::Row;
 use crate::state::format::{base_name, key_in, name_in, parent};
 use gpui::{AppContext as _, ClipboardItem, Context, Entity, Image, ImageFormat, SharedString, Window};
-use r3manager_core::s3::names::url_path;
-use r3manager_core::s3::{Access, Headers, ObjectInfo, Preview, S3Error};
+use rs3manager_core::s3::names::url_path;
+use rs3manager_core::s3::{Access, Headers, ObjectInfo, Preview, S3Error};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -528,7 +528,7 @@ impl Root {
     }
 
     /// Reports a delete and lists the folder again.
-    fn deleted(&mut self, result: Result<r3manager_core::s3::DeleteReport, S3Error>, cx: &mut Context<Self>) {
+    fn deleted(&mut self, result: Result<rs3manager_core::s3::DeleteReport, S3Error>, cx: &mut Context<Self>) {
         match result {
             Ok(report) if report.failed.is_empty() => {
                 let n = report.deleted;

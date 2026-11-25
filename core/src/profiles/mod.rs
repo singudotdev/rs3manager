@@ -45,7 +45,7 @@ pub enum ProfileError {
 /// Where the profile settings come from for one profile's credentials.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Credentials {
-    /// An access key and secret in the credentials or config file: what r3manager writes, and can edit.
+    /// An access key and secret in the credentials or config file: what rs3manager writes, and can edit.
     Keys,
     /// Something the SDK resolves itself (SSO, `credential_process`, a role, a web identity): used as is, not
     /// editable here.
@@ -202,7 +202,7 @@ impl Files {
     }
 
     /// Saves `edit` as a new profile (`original` `None`) or over the profile `original`, renaming it when the name
-    /// changed. Only the keys r3manager owns are written; everything else in both files stays.
+    /// changed. Only the keys rs3manager owns are written; everything else in both files stays.
     pub fn save(&self, original: Option<&str>, edit: &ProfileEdit) -> Result<(), ProfileError> {
         let (mut config, mut credentials) = self.read()?;
         let existing: Vec<String> = self.load()?.into_iter().map(|p| p.name).collect();
@@ -301,7 +301,7 @@ fn write(path: &Path, text: &str, secret: bool) -> Result<(), ProfileError> {
         create_private_dir(dir).map_err(io)?;
     }
     let file_name = path.file_name().map_or_else(|| "aws".into(), |n| n.to_string_lossy());
-    let tmp = dir.join(format!(".{file_name}.r3manager-{}", std::process::id()));
+    let tmp = dir.join(format!(".{file_name}.rs3manager-{}", std::process::id()));
     let result = (|| {
         let mut file = open_new(&tmp, secret || is_private(path))?;
         file.write_all(text.as_bytes())?;

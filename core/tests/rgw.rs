@@ -2,8 +2,8 @@
 //! loaded by the SDK, as a developer's would be. Ignored in a plain `cargo test`; `dev/test-rgw.sh` starts the local
 //! radosgw and runs them with its test user's keys.
 
-use r3manager_core::profiles::{Files, ProfileEdit};
-use r3manager_core::s3::{Engine, Headers, Progress, S3Error, Session};
+use rs3manager_core::profiles::{Files, ProfileEdit};
+use rs3manager_core::s3::{Engine, Headers, Progress, S3Error, Session};
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
@@ -267,7 +267,7 @@ fn group_policies_decide_what_a_project_user_may_do() {
 #[test]
 #[ignore = "needs a radosgw: dev/test-rgw.sh"]
 fn a_project_user_reads_its_own_policies() {
-    use r3manager_core::s3::Access;
+    use rs3manager_core::s3::Access;
     let dir = tempfile::tempdir().unwrap();
     let engine = Engine::new().unwrap();
     let ro = wait(session_as(&engine, &dir.path().join("ro"), "R3M_TEST_PROD_RO").access()).unwrap();

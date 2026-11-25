@@ -60,7 +60,7 @@ impl Access {
         self.decide(action, bucket, key) != Decision::Denied
     }
 
-    /// The bucket names the profile may create, as wildcard patterns (`r3manager-*-dev`); empty when it may create
+    /// The bucket names the profile may create, as wildcard patterns (`rs3manager-*-dev`); empty when it may create
     /// none. `None` when any name may be tried: the root user, or policies not known.
     pub fn bucket_patterns(&self) -> Option<Vec<String>> {
         let Self::Policies { statements, .. } = self else { return None };
@@ -123,7 +123,7 @@ async fn load(iam: &aws_sdk_iam::Client) -> Result<Access, S3Error> {
         Ok(statements) => statements,
         Err(e) => return Ok(Access::Unknown(format!("a policy of {name} couldn't be read: {e}"))),
     };
-    tracing::info!(target: "r3manager::s3", user = %name, groups = ?groups, statements = statements.len(), "policies loaded");
+    tracing::info!(target: "rs3manager::s3", user = %name, groups = ?groups, statements = statements.len(), "policies loaded");
     Ok(Access::Policies { user: name, groups, statements })
 }
 

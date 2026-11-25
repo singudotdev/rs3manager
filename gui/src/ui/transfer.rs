@@ -6,8 +6,8 @@ use crate::state::browser::Row;
 use crate::state::format::{base_name, key_in};
 use crate::state::transfers::{Job, Status};
 use gpui::{AsyncApp, Context, PathPromptOptions, WeakEntity, Window};
-use r3manager_core::s3::names::content_type_for;
-use r3manager_core::s3::{Headers, local_path_for, walk};
+use rs3manager_core::s3::names::content_type_for;
+use rs3manager_core::s3::{Headers, local_path_for, walk};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -243,7 +243,7 @@ impl Root {
 
     /// Records how transfer `id` ended, starts the next ones, and lists the open folder again once the last upload
     /// into it is done.
-    fn transfer_finished(&mut self, id: u64, result: Result<(), r3manager_core::s3::S3Error>, cx: &mut Context<Self>) {
+    fn transfer_finished(&mut self, id: u64, result: Result<(), rs3manager_core::s3::S3Error>, cx: &mut Context<Self>) {
         let uploaded_here = match self.transfers.finish(id, result) {
             Some(Job::Upload { bucket, .. }) => self.browser.bucket() == Some(bucket.as_str()),
             _ => false,

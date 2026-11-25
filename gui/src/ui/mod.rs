@@ -31,7 +31,7 @@ use root::Root;
 use std::borrow::Cow;
 
 actions!(
-    r3manager,
+    rs3manager,
     [
         /// Confirms the dialog open.
         Submit,
@@ -59,7 +59,7 @@ actions!(
 );
 
 /// The window's application id on Linux, which desktops match their launcher entry by.
-const APP_ID: &str = "r3manager";
+const APP_ID: &str = "rs3manager";
 
 /// The built-in fonts (licenses beside them in `gui/fonts/`).
 const FONTS: [&[u8]; 6] = [
@@ -113,16 +113,16 @@ fn application() -> anyhow::Result<gpui::Application> {
     std::panic::set_hook(Box::new(|_| {}));
     let app = std::panic::catch_unwind(gpui_platform::application);
     std::panic::set_hook(hook);
-    app.map_err(|_| anyhow::anyhow!("couldn't connect to the window system: run r3manager from a desktop session"))
+    app.map_err(|_| anyhow::anyhow!("couldn't connect to the window system: run rs3manager from a desktop session"))
 }
 
 /// Opens the window and runs until it's closed.
 pub fn run() -> anyhow::Result<()> {
-    let engine = r3manager_core::s3::Engine::new().context("couldn't start")?;
-    let files = r3manager_core::profiles::Files::from_env().context("couldn't find the AWS CLI's files")?;
+    let engine = rs3manager_core::s3::Engine::new().context("couldn't start")?;
+    let files = rs3manager_core::profiles::Files::from_env().context("couldn't find the AWS CLI's files")?;
     application()?.run(move |cx: &mut App| {
         if let Err(e) = cx.text_system().add_fonts(FONTS.iter().map(|&f| Cow::Borrowed(f)).collect()) {
-            tracing::warn!(target: "r3manager::ui", error = %e, "couldn't load the built-in fonts");
+            tracing::warn!(target: "rs3manager::ui", error = %e, "couldn't load the built-in fonts");
         }
         bind_keys(cx);
         cx.on_action(|_: &Quit, cx| cx.quit());
@@ -132,7 +132,7 @@ pub fn run() -> anyhow::Result<()> {
             ..Default::default()
         };
         match cx.open_window(options, |window, cx| {
-            window.set_window_title("r3manager");
+            window.set_window_title("rs3manager");
             cx.new(|cx| Root::new(engine, files, window, cx))
         }) {
             Ok(_) => cx
@@ -143,7 +143,7 @@ pub fn run() -> anyhow::Result<()> {
                 })
                 .detach(),
             Err(e) => {
-                tracing::error!(target: "r3manager::ui", error = %e, "couldn't open the window");
+                tracing::error!(target: "rs3manager::ui", error = %e, "couldn't open the window");
                 cx.quit();
             }
         }

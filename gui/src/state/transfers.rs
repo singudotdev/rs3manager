@@ -1,7 +1,7 @@
 //! Uploads and downloads the user started: queued, a few running at once, then done, failed or cancelled. Only the
 //! bookkeeping lives here; the app runs each job on the session and reports back with [`Transfers::finish`].
 
-use r3manager_core::s3::{Headers, Progress, S3Error};
+use rs3manager_core::s3::{Headers, Progress, S3Error};
 use std::path::PathBuf;
 use std::sync::Arc;
 

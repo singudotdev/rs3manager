@@ -5342,40 +5342,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
-name = "r3manager-app"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "gpui",
- "gpui_platform",
- "r3manager-core",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "unicode-segmentation",
-]
-
-[[package]]
-name = "r3manager-core"
-version = "0.1.0"
-dependencies = [
- "aws-config",
- "aws-runtime",
- "aws-sdk-iam",
- "aws-sdk-s3",
- "aws-smithy-types",
- "bytes",
- "http-body 1.1.0",
- "serde_json",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "rand"
 version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5737,6 +5703,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9da7f59328b09405b181fee1018925fad50f157afb43c0c0f5c522c256dd5907"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "rs3manager-app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "gpui",
+ "gpui_platform",
+ "rs3manager-core",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "rs3manager-core"
+version = "0.1.0"
+dependencies = [
+ "aws-config",
+ "aws-runtime",
+ "aws-sdk-iam",
+ "aws-sdk-s3",
+ "aws-smithy-types",
+ "bytes",
+ "http-body 1.1.0",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

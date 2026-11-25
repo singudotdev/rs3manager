@@ -25,10 +25,10 @@ pub enum S3Error {
     /// Creating a bucket under a name that's taken.
     #[error("a bucket with that name already exists")]
     BucketExists,
-    /// Renaming or moving onto a key (or folder) that's already there: r3manager never overwrites silently.
+    /// Renaming or moving onto a key (or folder) that's already there: rs3manager never overwrites silently.
     #[error("{0:?} already exists")]
     ObjectExists(String),
-    /// A bucket name, key or metadata the gateway (or r3manager, before sending it) refuses.
+    /// A bucket name, key or metadata the gateway (or rs3manager, before sending it) refuses.
     #[error("invalid {0}")]
     Invalid(String),
     /// The gateway couldn't be reached, or stopped answering.
@@ -53,7 +53,7 @@ pub enum S3Error {
         /// Its message.
         message: String,
     },
-    /// The task running the operation panicked: a bug in r3manager.
+    /// The task running the operation panicked: a bug in rs3manager.
     #[error("internal error: {0}")]
     Internal(String),
 }

@@ -28,7 +28,7 @@ without IAM, the window falls back to asking the gateway (marking buckets it can
 
 - One IAM round of a few requests per connect and refresh; no per-action probing.
 - Rights come only from the policies of an account's users and groups: the team doesn't use bucket policies (they're
-  blocked on the cluster), so nothing outside what r3manager reads can grant a right, and the evaluation is complete
+  blocked on the cluster), so nothing outside what rs3manager reads can grant a right, and the evaluation is complete
   but for `Condition`s. Were bucket policies ever allowed, a right granted only by one would be hidden.
 - Only the S3 managed policies radosgw supports (`AmazonS3FullAccess`, `AmazonS3ReadOnlyAccess`) are known.
 - radosgw 19.2 orders three user-policy answers in a way the SDK rejects; `core/src/s3/rgw_iam.rs` fixes them before

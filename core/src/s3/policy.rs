@@ -138,7 +138,7 @@ pub fn decide(statements: &[Statement], action: &str, resource: &str) -> Decisio
 }
 
 /// The resources unconditional Allow statements grant `action` on, as written: for bucket names, the patterns a
-/// user may create (`arn:aws:s3:::r3manager-*-dev`). A Deny on some of them isn't subtracted; [`decide`] still
+/// user may create (`arn:aws:s3:::rs3manager-*-dev`). A Deny on some of them isn't subtracted; [`decide`] still
 /// judges each name.
 pub fn allowed_resources(statements: &[Statement], action: &str) -> Vec<String> {
     statements
@@ -207,20 +207,20 @@ mod tests {
     use super::*;
     use std::fmt::Write as _;
 
-    /// The team's groups for buckets `r3manager-*-ENV`, as `dev/rgw.sh project` writes them.
+    /// The team's groups for buckets `rs3manager-*-ENV`, as `dev/rgw.sh project` writes them.
     fn team(env: &str, buckets_rw: bool) -> Vec<Statement> {
         let objects = format!(
             r#"{{"Version":"2012-10-17","Statement":[{{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject",
-            "s3:DeleteObject"],"Resource":"arn:aws:s3:::r3manager-*-{env}/*"}}]}}"#
+            "s3:DeleteObject"],"Resource":"arn:aws:s3:::rs3manager-*-{env}/*"}}]}}"#
         );
         let mut buckets = format!(
             r#"{{"Effect":"Allow","Action":"s3:ListAllMyBuckets","Resource":"*"}},{{"Effect":"Allow",
-            "Action":["s3:ListBucket"],"Resource":"arn:aws:s3:::r3manager-*-{env}"}}"#
+            "Action":["s3:ListBucket"],"Resource":"arn:aws:s3:::rs3manager-*-{env}"}}"#
         );
         if buckets_rw {
             let _ = write!(
                 buckets,
-                r#",{{"Effect":"Allow","Action":["s3:CreateBucket","s3:DeleteBucket"],"Resource":"arn:aws:s3:::r3manager-*-{env}"}}"#
+                r#",{{"Effect":"Allow","Action":["s3:CreateBucket","s3:DeleteBucket"],"Resource":"arn:aws:s3:::rs3manager-*-{env}"}}"#
             );
         }
         let mut all = parse(&objects).unwrap();
@@ -231,17 +231,17 @@ mod tests {
     #[test]
     fn the_team_groups_allow_objects_and_buckets_by_name() {
         let prod = team("prod", false);
-        assert_eq!(decide(&prod, "s3:PutObject", "arn:aws:s3:::r3manager-web-prod/a/b.txt"), Decision::Allowed);
-        assert_eq!(decide(&prod, "s3:ListBucket", "arn:aws:s3:::r3manager-web-prod"), Decision::Allowed);
+        assert_eq!(decide(&prod, "s3:PutObject", "arn:aws:s3:::rs3manager-web-prod/a/b.txt"), Decision::Allowed);
+        assert_eq!(decide(&prod, "s3:ListBucket", "arn:aws:s3:::rs3manager-web-prod"), Decision::Allowed);
         assert_eq!(decide(&prod, "s3:ListBucket", "arn:aws:s3:::legacy-prod"), Decision::Denied);
-        assert_eq!(decide(&prod, "s3:CreateBucket", "arn:aws:s3:::r3manager-api-prod"), Decision::Denied);
+        assert_eq!(decide(&prod, "s3:CreateBucket", "arn:aws:s3:::rs3manager-api-prod"), Decision::Denied);
         assert_eq!(allowed_resources(&prod, "s3:CreateBucket"), Vec::<String>::new());
 
         let dev = team("dev", true);
-        assert_eq!(decide(&dev, "s3:CreateBucket", "arn:aws:s3:::r3manager-api-dev"), Decision::Allowed);
+        assert_eq!(decide(&dev, "s3:CreateBucket", "arn:aws:s3:::rs3manager-api-dev"), Decision::Allowed);
         assert_eq!(decide(&dev, "s3:CreateBucket", "arn:aws:s3:::otro-api-dev"), Decision::Denied);
-        assert_eq!(decide(&dev, "s3:createbucket", "arn:aws:s3:::r3manager-api-dev"), Decision::Allowed, "any case");
-        assert_eq!(allowed_resources(&dev, "s3:CreateBucket"), ["arn:aws:s3:::r3manager-*-dev"]);
+        assert_eq!(decide(&dev, "s3:createbucket", "arn:aws:s3:::rs3manager-api-dev"), Decision::Allowed, "any case");
+        assert_eq!(allowed_resources(&dev, "s3:CreateBucket"), ["arn:aws:s3:::rs3manager-*-dev"]);
     }
 
     #[test]
@@ -275,8 +275,8 @@ mod tests {
 
     #[test]
     fn wildcards_match_runs_and_single_characters() {
-        assert!(glob("r3manager-*-dev", "r3manager-web-api-dev", false));
-        assert!(!glob("r3manager-*-dev", "r3manager-web-prod", false));
+        assert!(glob("rs3manager-*-dev", "rs3manager-web-api-dev", false));
+        assert!(!glob("rs3manager-*-dev", "rs3manager-web-prod", false));
         assert!(glob("a?c", "abc", false) && !glob("a?c", "ac", false));
         assert!(glob("*", "", false) && glob("S3:Get*", "s3:getobject", true));
         assert!(!glob("arn:aws:s3:::b", "arn:aws:s3:::b/x", false));

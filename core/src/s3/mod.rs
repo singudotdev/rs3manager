@@ -43,7 +43,7 @@ impl Engine {
     pub fn new() -> Result<Self, S3Error> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
-            .thread_name("r3manager-s3")
+            .thread_name("rs3manager-s3")
             .enable_all()
             .build()
             .map_err(|e| S3Error::Internal(format!("couldn't start the S3 threads: {e}")))?;
@@ -82,7 +82,7 @@ impl Engine {
                 iam = iam.region(Region::new(DEFAULT_REGION));
             }
             let endpoint = shared.endpoint_url().map(str::to_owned);
-            tracing::info!(target: "r3manager::s3", profile = %name, endpoint = ?endpoint, "connected");
+            tracing::info!(target: "rs3manager::s3", profile = %name, endpoint = ?endpoint, "connected");
             Ok(Session {
                 client: aws_sdk_s3::Client::from_conf(config.build()),
                 iam: aws_sdk_iam::Client::from_conf(iam.build()),

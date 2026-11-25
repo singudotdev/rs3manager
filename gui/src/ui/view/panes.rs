@@ -26,7 +26,7 @@ impl Root {
             .bg(theme.panel)
             .border_b_1()
             .border_color(theme.border)
-            .child(div().font_weight(gpui::FontWeight::SEMIBOLD).text_base().child("r3manager"))
+            .child(div().font_weight(gpui::FontWeight::SEMIBOLD).text_base().child("rs3manager"))
             .child(
                 // The dropdown hangs under the button, drawn after (over) everything else in the window.
                 div()

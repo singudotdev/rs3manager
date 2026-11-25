@@ -1,4 +1,4 @@
-# r3manager
+# rs3manager
 
 A desktop app for developers to work with the buckets and objects of their Ceph RADOS Gateway (radosgw) account, as
 they did in the MinIO console: browse folders, upload (files, folders, or dropped on the window), download, rename or
@@ -6,12 +6,12 @@ move, delete, preview text and images, edit an object's headers and metadata, an
 (one hour to seven days). Written in Rust with
 [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui).
 
-Cluster administration (accounts, users, quotas) stays with the team running Ceph; r3manager only does what an
+Cluster administration (accounts, users, quotas) stays with the team running Ceph; rs3manager only does what an
 account's keys allow.
 
 ## Profiles
 
-r3manager uses the AWS CLI's own profiles, in `~/.aws/config` and `~/.aws/credentials` (or wherever
+rs3manager uses the AWS CLI's own profiles, in `~/.aws/config` and `~/.aws/credentials` (or wherever
 `AWS_CONFIG_FILE` and `AWS_SHARED_CREDENTIALS_FILE` point). Each profile points at one radosgw account:
 
 ```ini
@@ -32,7 +32,7 @@ Profiles added or edited in the app are written to those files, leaving every ot
 
 The window shows only what the profile's policies allow. At connect (and on Refresh) it reads the profile's own IAM
 identity, groups and policies and evaluates them: buckets it can't list aren't shown, actions it can't do aren't
-offered, and the New bucket dialog shows the names it may create (e.g. `r3manager-*-dev`) and refuses others before
+offered, and the New bucket dialog shows the names it may create (e.g. `rs3manager-*-dev`) and refuses others before
 sending. Each user needs a policy letting it read its own policies (`dev/rgw.sh project` writes one; see
 `docs/decisions/0004-*`); without it the window asks the gateway instead and hides the buckets it's refused. The
 account's root user may do everything in its account.
@@ -68,7 +68,7 @@ it prints USER's profile. Its policies are drafts in the script, to swap for the
 ## Building
 
 ```sh
-cargo run -p r3manager-app --release
+cargo run -p rs3manager-app --release
 ```
 
 On Linux GPUI needs the Wayland/X11, Vulkan and font development packages Zed lists for
@@ -76,12 +76,12 @@ On Linux GPUI needs the Wayland/X11, Vulkan and font development packages Zed li
 
 ### Installing on Linux
 
-Into `~/.local`, with a launcher entry and icon (the window's app id is `r3manager`, so docks group it under them):
+Into `~/.local`, with a launcher entry and icon (the window's app id is `rs3manager`, so docks group it under them):
 
 ```sh
 cargo install --locked --path gui --root ~/.local
-install -Dm644 gui/assets/r3manager.desktop ~/.local/share/applications/r3manager.desktop
-install -Dm644 gui/assets/r3manager.svg ~/.local/share/icons/hicolor/scalable/apps/r3manager.svg
+install -Dm644 gui/assets/rs3manager.desktop ~/.local/share/applications/rs3manager.desktop
+install -Dm644 gui/assets/rs3manager.svg ~/.local/share/icons/hicolor/scalable/apps/rs3manager.svg
 ```
 
 `~/.local/bin` must be on the `PATH` the desktop session starts launchers with.

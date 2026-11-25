@@ -1,6 +1,6 @@
 [package]
-name = "r3manager-core"
-description = "r3manager's core: the AWS CLI's profiles and the S3 operations on the buckets and objects of a radosgw account."
+name = "rs3manager-core"
+description = "rs3manager's core: the AWS CLI's profiles and the S3 operations on the buckets and objects of a radosgw account."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

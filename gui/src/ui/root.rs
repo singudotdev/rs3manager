@@ -12,8 +12,8 @@ use gpui::{
     AppContext as _, AsyncApp, Context, Entity, FocusHandle, Focusable as _, SharedString, Subscription,
     UniformListScrollHandle, WeakEntity, Window,
 };
-use r3manager_core::profiles::{Files, Profile, selected_by_env};
-use r3manager_core::s3::{Access, Bucket, Engine, Pending, S3Error, Session};
+use rs3manager_core::profiles::{Files, Profile, selected_by_env};
+use rs3manager_core::s3::{Access, Bucket, Engine, Pending, S3Error, Session};
 use std::time::Duration;
 
 /// How long a message that isn't an error stays.
@@ -277,7 +277,7 @@ impl Root {
     /// Shows `text` as an error, until dismissed or replaced.
     pub fn error(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
         let text = text.into();
-        tracing::warn!(target: "r3manager::ui", message = %text, "error shown");
+        tracing::warn!(target: "rs3manager::ui", message = %text, "error shown");
         self.notice_id += 1;
         self.notice = Some(Notice { text, error: true, id: self.notice_id });
         cx.notify();

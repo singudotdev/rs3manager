@@ -6,8 +6,8 @@ use super::root::{Modal, Root};
 use super::{bind_keys, input::TextInput};
 use crate::state::browser::Row;
 use gpui::{Entity, Modifiers, TestAppContext, VisualTestContext};
-use r3manager_core::profiles::{Files, ProfileEdit};
-use r3manager_core::s3::{Engine, Headers, Progress, Session};
+use rs3manager_core::profiles::{Files, ProfileEdit};
+use rs3manager_core::s3::{Engine, Headers, Progress, Session};
 use std::path::Path;
 use std::time::Duration;
 
@@ -57,7 +57,7 @@ struct TestBucket {
 impl Drop for TestBucket {
     fn drop(&mut self) {
         if let Err(e) = wait(self.session.delete_bucket(&self.name, true)) {
-            tracing::warn!(target: "r3manager::tests", bucket = %self.name, error = %e, "test bucket left behind");
+            tracing::warn!(target: "rs3manager::tests", bucket = %self.name, error = %e, "test bucket left behind");
         }
     }
 }
