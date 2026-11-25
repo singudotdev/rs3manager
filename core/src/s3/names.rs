@@ -80,7 +80,7 @@ pub(crate) fn copy_source(bucket: &str, key: &str) -> String {
 /// The Content-Type for a file named `name`, by its extension: what a browser or app fetching the object needs to
 /// show it. Unknown ones are `application/octet-stream`.
 pub fn content_type_for(name: &str) -> &'static str {
-    let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+    let ext = name.rsplit_once('.').map_or_else(String::new, |(_, e)| e.to_ascii_lowercase());
     match ext.as_str() {
         "html" | "htm" => "text/html; charset=utf-8",
         "css" => "text/css; charset=utf-8",

@@ -297,7 +297,9 @@ pub(crate) async fn head(client: &Client, bucket: &str, key: &str) -> Result<Obj
             content_disposition: out.content_disposition().map(str::to_owned),
             content_encoding: out.content_encoding().and_then(content_encoding),
             content_language: out.content_language().map(str::to_owned),
-            user: out.metadata().map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect()).unwrap_or_default(),
+            user: out
+                .metadata()
+                .map_or_else(Default::default, |m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
         },
     })
 }
