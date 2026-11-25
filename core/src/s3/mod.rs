@@ -5,8 +5,8 @@
 //! every operation of a [`Session`] is spawned there and handed back as a [`Pending`], a plain future any executor
 //! can await, so tokio never runs inside GPUI's async code (see `docs/decisions/0001-*`).
 //!
-//! - [`access`]: what the profile's own IAM policies let it do, evaluated by [`policy`].
-//! - [`error`]: what a failure means.
+//! - `access`: what the profile's own IAM policies let it do, evaluated by [`policy`].
+//! - `error`: what a failure means.
 //! - [`names`]: bucket names, keys and metadata checked before they're sent.
 //! - `ops`: buckets, listings, metadata, rename, delete.
 //! - `transfer`: uploads, downloads and their progress.

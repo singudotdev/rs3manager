@@ -1,6 +1,6 @@
 //! The AWS CLI's profiles: the ones in its [shared config and credentials files](https://docs.aws.amazon.com/sdkref/latest/guide/file-format.html),
 //! found where the CLI finds them, listed, added, edited and removed without touching anything else in those files
-//! ([`ini`]). Each profile points at one radosgw account through its keys and `endpoint_url`.
+//! (`ini`). Each profile points at one radosgw account through its keys and `endpoint_url`.
 
 mod ini;
 
@@ -55,7 +55,7 @@ pub enum Credentials {
 }
 
 /// A profile as the files describe it. The secret key is never read into it, so it can't leak into the UI or logs;
-/// [`ProfileEdit::secret_access_key`] left out keeps the stored one.
+/// `ProfileEdit::secret_access_key` left out keeps the stored one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Profile {
     /// The profile's name, as `aws --profile` takes it.

@@ -24,7 +24,7 @@ pub enum Access {
     /// The account's root user: everything in the account but what an explicit Deny in its own policies refuses
     /// (the platform team's guardrails, `docs/decisions/0005-*`).
     Root {
-        /// [`ROOT`]'s statement and those of the root's policies.
+        /// `ROOT`'s statement and those of the root's policies.
         statements: Vec<Statement>,
     },
     /// An IAM user of the account, with the policies of its groups and its own.
