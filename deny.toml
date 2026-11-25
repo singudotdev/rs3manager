@@ -10,15 +10,6 @@ ignore = [
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive, merged into zbus 6, through gpui on Linux" },
     { id = "RUSTSEC-2026-0543", reason = "chrono, unmaintained, through gpui" },
     { id = "RUSTSEC-2024-0436", reason = "paste, unmaintained, through gpui's macOS and font crates" },
-    # The AWS SDK's HTTP client (aws-smithy-http-client) still carries hyper 0.14 with h2 0.3, rustls 0.21 and
-    # rustls-webpki 0.101, which these advisories fix only in newer lines; the SDK is what has to move off them.
-    { id = "RUSTSEC-2026-0258", reason = "h2 0.3, through aws-smithy-http-client's legacy hyper 0.14" },
-    { id = "RUSTSEC-2026-0346", reason = "rustls 0.21, through aws-smithy-http-client's legacy hyper-rustls 0.24" },
-    { id = "RUSTSEC-2026-0349", reason = "rustls 0.21, through aws-smithy-http-client's legacy hyper-rustls 0.24" },
-    { id = "RUSTSEC-2026-0098", reason = "rustls-webpki 0.101, through aws-smithy-http-client's legacy rustls 0.21" },
-    { id = "RUSTSEC-2026-0099", reason = "rustls-webpki 0.101, through aws-smithy-http-client's legacy rustls 0.21" },
-    { id = "RUSTSEC-2026-0104", reason = "rustls-webpki 0.101, through aws-smithy-http-client's legacy rustls 0.21" },
-    { id = "RUSTSEC-2026-0382", reason = "rustls-webpki 0.101, through aws-smithy-http-client's legacy rustls 0.21" },
 ]
 
 [licenses]
