@@ -78,7 +78,7 @@ jobs:
       - run: |
           # shellcheck disable=SC2086 # one package per word
           sudo apt-get update && sudo apt-get install -y $GUI_LINUX_DEPS xvfb mesa-vulkan-drivers imagemagick shellcheck x11-utils
-      - run: shellcheck -x e2e/lib.sh e2e/smoke-app.sh dev/test-https.sh .github/package.sh
+      - run: shellcheck -x dev/*.sh e2e/*.sh .github/package.sh
       - run: cargo build --release --locked -p rs3manager-app
       - run: timeout 300 xvfb-run -a -s "-screen 0 1280x800x24" e2e/smoke-app.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
