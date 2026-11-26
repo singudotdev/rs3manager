@@ -19,10 +19,27 @@ cargo deny check                          # licenses, advisories and git sources
 
 Lints must be warning-free (`max_width = 120`, pedantic clippy, no `unsafe`; see `Cargo.toml` and `rustfmt.toml`).
 
-## Tests against Ceph
+## Tests
 
-The integration tests (`core/tests/rgw.rs`, the window tests) need radosgw: `dev/rgw.sh up` starts a one-node Ceph in
-podman, and `dev/test-rgw.sh` runs them against it (why this image: decision 0003). CI doesn't run them.
+Six layers, from the fastest:
+
+- **Unit tests**, inline in each module (`#[cfg(test)]`): names, policies, errors, the `~/.aws` editor, transfers,
+  display detection. `cargo test --workspace`; CI runs them on every push.
+- **Window tests** (`gui/src/ui/tests.rs`): the app in a GPUI test window, driven by clicks and keys, checked by what
+  it shows. The ones that need a gateway are `#[ignore]`d in a plain `cargo test`.
+- **Integration tests against Ceph** (`core/tests/rgw.rs` and the ignored window tests): `dev/rgw.sh up` starts a
+  one-node Ceph in podman (why this image: decision 0003), and `dev/test-rgw.sh` runs them against it, then
+  `dev/test-guardrails.sh` checks an account's guardrails with the AWS CLI. CI can't run Ceph, so these run on the
+  developer's machine before each pull request that touches S3.
+- **HTTPS** (`dev/test-https.sh`): the same integration tests through a TLS proxy (`dev/tls-proxy.py`) with its own CA,
+  and a check that a gateway whose certificate isn't trusted is refused.
+- **Smoke test of the release app** (`e2e/smoke-app.sh`, CI job `app smoke` under `xvfb`): the app says so and exits
+  when there is no display, starts and stays up against an unreachable gateway, idles under 3% CPU, and draws a window
+  that isn't black (screenshot in the job's artifact).
+- **Mutation testing** of the pure modules (`cargo mutants`, in a scratch worktree): a mutant no test catches is a
+  missing test.
+
+Scripts are checked with `shellcheck -x` in CI.
 
 ## Branches
 
@@ -44,5 +61,9 @@ its reason, and checked again when the crate that pulls them in moves.
 
 Pushing a tag `vX.Y.Z` that matches `version` in `Cargo.toml` runs `.github/workflows/release.yml`: it builds the app in
 release mode on Linux, packages it with `.github/package.sh` (binary, launcher entry, icon, licenses, SHA-256) and
-publishes a GitHub release with generated notes. A pull request changing the workflow or the script builds and
+publishes a GitHub release with generated notes.
+
+Versions are `0.Y.Z` for now: a release bumps `Z`, and only one that breaks something (profiles, files the app
+writes, behaviour users rely on) bumps `Y`. Each release moves the `Unreleased` section of `CHANGELOG.md` under its
+version and date. A pull request changing the workflow or the script builds and
 packages the same way without publishing.
