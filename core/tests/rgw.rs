@@ -332,3 +332,48 @@ fn a_project_user_reads_its_own_policies() {
     assert!(!root.may("s3:PutBucketPolicy", "r3mtest-web-prod", None), "no bucket policies, even for the root");
     assert_eq!(root.bucket_patterns(), None, "any name may be tried");
 }
+
+#[test]
+#[ignore = "needs a radosgw: dev/test-rgw.sh"]
+fn a_buckets_tags_lifecycle_and_cors_are_read_written_and_removed() {
+    use rs3manager_core::s3::{CorsRule, LifecycleRule};
+    let (_engine, session, bucket, _dir) = setup("settings");
+
+    assert_eq!(wait(session.bucket_tags(&bucket)).unwrap(), [], "a new bucket has no tags");
+    let tags = vec![("team".to_owned(), "a".to_owned()), ("env".to_owned(), "dev".to_owned())];
+    wait(session.set_bucket_tags(&bucket, tags.clone())).unwrap();
+    let mut read = wait(session.bucket_tags(&bucket)).unwrap();
+    read.sort();
+    assert_eq!(read, [tags[1].clone(), tags[0].clone()]);
+    let twice = vec![("k".to_owned(), "1".to_owned()), ("k".to_owned(), "2".to_owned())];
+    assert!(matches!(wait(session.set_bucket_tags(&bucket, twice)), Err(S3Error::Invalid(_))));
+    wait(session.set_bucket_tags(&bucket, Vec::new())).unwrap();
+    assert_eq!(wait(session.bucket_tags(&bucket)).unwrap(), []);
+
+    assert_eq!(wait(session.lifecycle(&bucket)).unwrap(), [], "a new bucket has no lifecycle");
+    let rules = vec![
+        LifecycleRule { prefix: "tmp/".to_owned(), expire_days: Some(7), ..LifecycleRule::new("tmp") },
+        LifecycleRule { enabled: false, abort_days: Some(2), noncurrent_days: Some(30), ..LifecycleRule::new("all") },
+    ];
+    wait(session.set_lifecycle(&bucket, rules.clone())).unwrap();
+    let mut read = wait(session.lifecycle(&bucket)).unwrap();
+    read.sort_by(|a, b| b.id.cmp(&a.id));
+    assert_eq!(read, rules);
+    wait(session.set_lifecycle(&bucket, Vec::new())).unwrap();
+    assert_eq!(wait(session.lifecycle(&bucket)).unwrap(), []);
+
+    assert_eq!(wait(session.cors(&bucket)).unwrap(), [], "a new bucket has no CORS");
+    let cors = vec![CorsRule {
+        id: Some("app".to_owned()),
+        origins: vec!["https://app.example.com".to_owned()],
+        methods: vec!["GET".to_owned(), "PUT".to_owned()],
+        allowed_headers: vec!["*".to_owned()],
+        expose_headers: vec!["ETag".to_owned()],
+        max_age: Some(600),
+    }];
+    wait(session.set_cors(&bucket, cors.clone())).unwrap();
+    assert_eq!(wait(session.cors(&bucket)).unwrap(), cors);
+    wait(session.set_cors(&bucket, Vec::new())).unwrap();
+    assert_eq!(wait(session.cors(&bucket)).unwrap(), []);
+    wait(session.delete_bucket(&bucket, true)).unwrap();
+}

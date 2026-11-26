@@ -134,6 +134,7 @@ impl Root {
             Modal::Profiles(ProfilesDialog { form: Some(form) }) => Self::profile_form(form, theme, cx),
             Modal::Profiles(ProfilesDialog { form: None }) => self.profile_list(theme, cx),
             Modal::Share(dialog) => Self::share_dialog(dialog, theme, cx),
+            Modal::Settings(dialog) => self.settings_dialog(dialog, theme, cx),
             // Drawn under the profile button, without dimming the window.
             Modal::ProfileMenu(_) => return None,
             Modal::Replace { jobs, existing } => Self::replace_dialog(jobs.len(), existing, theme, cx),
@@ -474,7 +475,7 @@ fn transfer_row(t: &Transfer, theme: &Theme, cx: &mut Context<Root>) -> Div {
 }
 
 /// A dialog's box, `width` wide.
-fn card(theme: &Theme, width: f32) -> Div {
+pub(super) fn card(theme: &Theme, width: f32) -> Div {
     div()
         .flex()
         .flex_col()
@@ -489,12 +490,12 @@ fn card(theme: &Theme, width: f32) -> Div {
 }
 
 /// A dialog's title.
-fn heading(text: gpui::SharedString) -> Div {
+pub(super) fn heading(text: gpui::SharedString) -> Div {
     div().text_base().font_weight(gpui::FontWeight::SEMIBOLD).child(text)
 }
 
 /// A dialog's buttons, on the right.
-fn footer() -> Div {
+pub(super) fn footer() -> Div {
     div().flex().justify_end().gap_2().pt_2()
 }
 

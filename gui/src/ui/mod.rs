@@ -8,6 +8,7 @@
 //! - `profiles`: the AWS CLI profiles dialog.
 //! - `rights`: what the profile's policies allow, and so what's shown.
 //! - `share`: download links to an object, with an expiry.
+//! - `settings`: a bucket's tags, lifecycle rules and CORS rules.
 //! - `view`: drawing each area.
 //! - [`input`]: text fields.
 //! - [`theme`]: colors and fonts.
@@ -19,6 +20,7 @@ pub mod input;
 mod profiles;
 mod rights;
 mod root;
+mod settings;
 mod share;
 pub mod theme;
 mod transfer;

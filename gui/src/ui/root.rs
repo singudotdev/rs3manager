@@ -5,6 +5,7 @@
 use super::browse::Details;
 use super::input::{Changed, TextInput};
 use super::profiles::{ProfileMenu, ProfilesDialog};
+use super::settings::SettingsDialog;
 use super::share::ShareDialog;
 use crate::state::browser::{Browser, Row};
 use crate::state::transfers::{Job, Transfers};
@@ -51,6 +52,8 @@ pub enum Modal {
     Profiles(ProfilesDialog),
     /// A download link to an object.
     Share(ShareDialog),
+    /// A bucket's tags, lifecycle rules and CORS rules.
+    Settings(SettingsDialog),
     /// Uploads that would replace objects already there: replace them, skip them, or upload nothing.
     Replace {
         /// Every upload asked for.
