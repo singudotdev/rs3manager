@@ -46,9 +46,9 @@ fn ensure_display_on(
 ) -> Result<()> {
     let shown = |name| var(name).unwrap_or_default().to_string_lossy().into_owned();
     match compositor {
-        "Headless" | "headless" => bail!(
-            "there's no display to open the window on (no WAYLAND_DISPLAY or DISPLAY): {RUN_FROM_DESKTOP}"
-        ),
+        "Headless" | "headless" => {
+            bail!("there's no display to open the window on (no WAYLAND_DISPLAY or DISPLAY): {RUN_FROM_DESKTOP}")
+        }
         // A socket handed down by a compositor that started the app is already connected.
         "Wayland" if var("WAYLAND_SOCKET").is_none() => {
             let display = shown("WAYLAND_DISPLAY");

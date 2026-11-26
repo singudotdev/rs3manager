@@ -45,6 +45,7 @@ CREDENTIALS
 # isn't possible (CI runners have none to hide), as it is.
 hidden() {
     if unshare -rm true 2>/dev/null; then
+        # shellcheck disable=SC2016 # expanded by the inner shell, not this one
         unshare -rm sh -c 'mount -t tmpfs none /tmp/.X11-unix 2>/dev/null; if [ -n "${XDG_RUNTIME_DIR:-}" ]; then mount -t tmpfs none "$XDG_RUNTIME_DIR" 2>/dev/null; fi; exec "$@"' sh "$@"
     else
         "$@"
