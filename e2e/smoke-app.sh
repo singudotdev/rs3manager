@@ -67,22 +67,23 @@ no_display "no Wayland compositor at WAYLAND_DISPLAY=$work/no-wayland" WAYLAND_D
 # Not :99, the first display xvfb-run -a tries: CI's own X server may be there.
 no_display 'no X server at DISPLAY=:9876' DISPLAY=:9876
 
+# Whether the app is still running: `kill -0` also succeeds on a child that exited and wasn't waited for (a zombie),
+# which would pass for a live app.
+alive() {
+    [ "$(sed 's/.*) //' "/proc/$pid/stat" 2>/dev/null | cut -c1)" != Z ] && kill -0 "$pid" 2>/dev/null
+}
+
 echo "step: the three no-display checks passed"
 "$app" >"$work/app.log" 2>&1 &
 pid=$!
 # Its first frames, fonts loaded, and the profile's first request refused.
 sleep 15
 alive || {
-    wait "$pid" 2>/dev/null
-    fail "the app exited (status $?): $(sed 's/\x1b\[[0-9;]*m//g' "$work/app.log")"
+    status=0
+    wait "$pid" 2>/dev/null || status=$?
+    fail "the app exited (status $status): $(sed 's/\x1b\[[0-9;]*m//g' "$work/app.log")"
 }
 if grep -q 'panicked' "$work/app.log"; then fail "the app panicked: $(cat "$work/app.log")"; fi
-
-# Whether the app is still running: `kill -0` also succeeds on a child that exited and wasn't waited for (a zombie),
-# which would pass for a live app.
-alive() {
-    [ "$(sed 's/.*) //' "/proc/$pid/stat" 2>/dev/null | cut -c1)" != Z ] && kill -0 "$pid" 2>/dev/null
-}
 
 # CPU time the app's process used, in hundredths of a second: utime and stime, fields 14 and 15 of /proc/PID/stat;
 # after the `(name)`, which may hold spaces, they're the 12th and 13th.
@@ -92,8 +93,9 @@ cpu() {
     sed 's/.*) //' "/proc/$pid/stat" | awk -v t="$ticks" '{ print int(($12 + $13) * 100 / t) }'
 }
 alive || {
-    wait "$pid" 2>/dev/null
-    fail "the app exited (status $?): $(sed 's/\x1b\[[0-9;]*m//g' "$work/app.log")"
+    status=0
+    wait "$pid" 2>/dev/null || status=$?
+    fail "the app exited (status $status): $(sed 's/\x1b\[[0-9;]*m//g' "$work/app.log")"
 }
 echo "step: app up, measuring idle"
 before=$(cpu)
