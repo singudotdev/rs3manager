@@ -9,6 +9,7 @@
 //! - `error`: what a failure means.
 //! - [`names`]: bucket names, keys and metadata checked before they're sent.
 //! - `ops`: buckets, listings, metadata, rename, delete.
+//! - [`settings`]: a bucket's tags, lifecycle rules and CORS rules.
 //! - `transfer`: uploads, downloads and their progress.
 
 mod access;
@@ -17,10 +18,12 @@ pub mod names;
 mod ops;
 pub mod policy;
 mod rgw_iam;
+pub mod settings;
 mod transfer;
 
 pub use access::Access;
 pub use error::S3Error;
+pub use settings::{BucketTag, CorsRule, LifecycleRule};
 pub use transfer::{Progress, local_path_for, walk};
 
 use crate::profiles::{DEFAULT_REGION, Files};

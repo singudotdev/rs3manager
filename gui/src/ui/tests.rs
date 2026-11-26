@@ -106,6 +106,7 @@ fn until(cx: &mut VisualTestContext, view: &Entity<Root>, what: &str, done: impl
             Some(Modal::Confirm { title, .. }) => format!("confirm {title}"),
             Some(Modal::Profiles(_)) => "profiles".to_owned(),
             Some(Modal::Share(_)) => "share".to_owned(),
+            Some(Modal::Settings(d)) => format!("settings {:?} (error {:?})", d.tab, d.error),
             Some(Modal::ProfileMenu(_)) => "profile menu".to_owned(),
             Some(Modal::Replace { .. }) => "replace".to_owned(),
             None => "none".to_owned(),
@@ -398,6 +399,7 @@ fn a_read_only_project_user_sees_only_what_its_policies_allow(cx: &mut TestAppCo
     until(cx, &view, "the bucket", |r| r.browser.bucket() == Some(ours.as_str()) && !r.browser.loading());
     assert!(cx.debug_bounds("button Upload files").is_some(), "objects are read-write");
     assert!(cx.debug_bounds("button Delete bucket").is_none(), "buckets are read-only");
+    assert!(cx.debug_bounds("button Settings").is_none(), "its policies read none of the bucket's settings");
 }
 
 #[gpui::test]
@@ -462,4 +464,104 @@ fn refresh_picks_up_changed_permissions(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(cx.debug_bounds("button New").is_none(), "no longer");
     assert!(view.read_with(cx, |r, _| r.identity().unwrap()).contains("read-only-buckets"));
+}
+
+/// The settings dialog's tab, once read.
+fn settings_ready(r: &Root, tab: crate::state::settings::Tab) -> bool {
+    matches!(&r.modal, Some(Modal::Settings(d))
+        if d.tab == tab && !d.saving && matches!(d.state, super::settings::TabState::Ready { .. }))
+}
+
+/// The settings dialog, when open.
+fn settings(r: &Root) -> &super::settings::SettingsDialog {
+    match &r.modal {
+        Some(Modal::Settings(d)) => d,
+        _ => panic!("the settings dialog isn't open"),
+    }
+}
+
+#[gpui::test]
+#[ignore = "needs a radosgw: dev/test-rgw.sh"]
+fn a_buckets_tags_lifecycle_and_cors_are_edited_in_its_settings(cx: &mut TestAppContext) {
+    use super::settings::{Fields, TabState};
+    use crate::state::settings::Tab;
+    let dir = tempfile::tempdir().unwrap();
+    let files = files(dir.path());
+    let test_bucket = bucket(&files, dir.path());
+    let (name, core) = (test_bucket.name.clone(), test_bucket.session.clone());
+    let (view, cx) = window(cx, files);
+    let fields = |view: &Entity<Root>, cx: &mut VisualTestContext, pick: fn(&Fields) -> Vec<Entity<TextInput>>| {
+        view.read_with(cx, |r, _| match &settings(r).state {
+            TabState::Ready { fields, .. } => pick(fields),
+            _ => panic!("the tab isn't read"),
+        })
+    };
+
+    click(cx, &format!("bucket {name}"));
+    until(cx, &view, "the bucket", |r| r.browser.bucket() == Some(name.as_str()) && !r.browser.loading());
+    click(cx, "button Settings");
+    until(cx, &view, "the tags", |r| settings_ready(r, Tab::Tags));
+
+    // A tag: an empty key is refused in the dialog, then saved once typed.
+    click(cx, "button Add tag");
+    let tag = |f: &Fields| match f {
+        Fields::Tags(rows) => rows.iter().flat_map(|r| [r.key.clone(), r.value.clone()]).collect(),
+        _ => Vec::new(),
+    };
+    let row = fields(&view, cx, tag);
+    type_into(cx, &row[1], "platform");
+    click(cx, "button Save");
+    let error = view.read_with(cx, |r, _| settings(r).error.clone());
+    assert!(error.is_some_and(|e| e.contains("key is empty")), "refused before sending");
+    assert!(cx.debug_bounds("settings error").is_some(), "and said in the dialog");
+    type_into(cx, &row[0], "team");
+    cx.simulate_keystrokes("enter");
+    until(cx, &view, "the saved tags", |r| settings_ready(r, Tab::Tags) && settings(r).error.is_none());
+    assert_eq!(wait(core.bucket_tags(&name)).unwrap(), [("team".to_owned(), "platform".to_owned())]);
+
+    // A lifecycle rule, expiring tmp/ after 7 days, disabled.
+    click(cx, "button Lifecycle");
+    until(cx, &view, "the lifecycle", |r| settings_ready(r, Tab::Lifecycle));
+    click(cx, "button Add rule");
+    let rule = |f: &Fields| match f {
+        Fields::Lifecycle(cards) => cards.iter().flat_map(|c| [c.prefix.clone(), c.expire.clone()]).collect(),
+        _ => Vec::new(),
+    };
+    let card = fields(&view, cx, rule);
+    type_into(cx, &card[0], "tmp/");
+    type_into(cx, &card[1], "7");
+    click(cx, "rule 0 enabled");
+    click(cx, "button Save");
+    until(cx, &view, "the saved rule", |r| settings_ready(r, Tab::Lifecycle) && settings(r).error.is_none());
+    let rules = wait(core.lifecycle(&name)).unwrap();
+    assert_eq!(rules.len(), 1);
+    assert_eq!(
+        (rules[0].id.as_str(), rules[0].prefix.as_str(), rules[0].enabled, rules[0].expire_days),
+        ("rule-1", "tmp/", false, Some(7))
+    );
+
+    // A CORS rule: GET from any origin as added, plus PUT.
+    click(cx, "button CORS");
+    until(cx, &view, "the CORS rules", |r| settings_ready(r, Tab::Cors));
+    click(cx, "button Add rule");
+    click(cx, "rule 0 PUT");
+    click(cx, "button Save");
+    until(cx, &view, "the saved CORS", |r| settings_ready(r, Tab::Cors) && settings(r).error.is_none());
+    let saved_cors = wait(core.cors(&name)).unwrap();
+    assert_eq!(
+        (saved_cors.len(), saved_cors[0].origins.clone(), saved_cors[0].methods.clone()),
+        (1, vec!["*".to_owned()], vec!["GET".to_owned(), "PUT".to_owned()])
+    );
+
+    // Remove all asks first; Enter confirms.
+    click(cx, "button Remove all");
+    assert!(view.read_with(cx, |r, _| settings(r).confirm_remove));
+    cx.simulate_keystrokes("enter");
+    until(cx, &view, "the CORS removed", |r| {
+        settings_ready(r, Tab::Cors)
+            && matches!(&settings(r).state, TabState::Ready { loaded, .. } if loaded.is_empty())
+    });
+    assert_eq!(wait(core.cors(&name)).unwrap(), []);
+    cx.simulate_keystrokes("escape");
+    assert!(view.read_with(cx, |r, _| r.modal.is_none()));
 }
