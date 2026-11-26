@@ -199,14 +199,16 @@ group_policy() {
   local deny='{"Effect":"Deny","Action":['"$SHARING"'],"Resource":"*"}'
   local list='{"Effect":"Allow","Action":"s3:ListAllMyBuckets","Resource":"*"},
     {"Effect":"Allow","Action":["s3:ListBucket","s3:GetBucketLocation","s3:ListBucketMultipartUploads",
-      "s3:GetBucketVersioning"],"Resource":"'"$buckets"'"}'
+      "s3:GetBucketVersioning","s3:GetBucketTagging","s3:GetLifecycleConfiguration","s3:GetBucketCORS"],
+      "Resource":"'"$buckets"'"}'
   case $group in
     read-write-objects) printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetObject",
       "s3:PutObject","s3:DeleteObject","s3:AbortMultipartUpload","s3:ListMultipartUploadParts"],
       "Resource":"'"$buckets"'/*"},'"$deny"']}' ;;
     read-only-buckets) printf '%s' '{"Version":"2012-10-17","Statement":['"$list"','"$deny"']}' ;;
     read-write-buckets) printf '%s' '{"Version":"2012-10-17","Statement":['"$list"',
-      {"Effect":"Allow","Action":["s3:CreateBucket","s3:DeleteBucket"],"Resource":"'"$buckets"'"},'"$deny"']}' ;;
+      {"Effect":"Allow","Action":["s3:CreateBucket","s3:DeleteBucket","s3:PutBucketTagging",
+      "s3:PutLifecycleConfiguration","s3:PutBucketCORS"],"Resource":"'"$buckets"'"},'"$deny"']}' ;;
   esac
 }
 # Prints the keys of IAM user $1, two lines, through the IAM command in the other arguments: its first key, the secret

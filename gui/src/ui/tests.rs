@@ -399,7 +399,16 @@ fn a_read_only_project_user_sees_only_what_its_policies_allow(cx: &mut TestAppCo
     until(cx, &view, "the bucket", |r| r.browser.bucket() == Some(ours.as_str()) && !r.browser.loading());
     assert!(cx.debug_bounds("button Upload files").is_some(), "objects are read-write");
     assert!(cx.debug_bounds("button Delete bucket").is_none(), "buckets are read-only");
-    assert!(cx.debug_bounds("button Settings").is_none(), "its policies read none of the bucket's settings");
+
+    // Settings are read, not written: shown as text, saying why, without Save.
+    wait(root.set_bucket_tags(&ours, vec![("team".to_owned(), "platform".to_owned())])).unwrap();
+    click(cx, "button Settings");
+    until(cx, &view, "the tags", |r| settings_ready(r, crate::state::settings::Tab::Tags));
+    assert!(cx.debug_bounds("settings read-only").is_some(), "says it's read-only");
+    for absent in ["button Save", "button Add tag", "button Remove all", "button ×"] {
+        assert!(cx.debug_bounds(absent).is_none(), "{absent} isn't offered");
+    }
+    assert!(cx.debug_bounds("settings value platform").is_some(), "the value is shown as text");
 }
 
 #[gpui::test]

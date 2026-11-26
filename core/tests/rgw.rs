@@ -293,11 +293,23 @@ fn group_policies_decide_what_a_project_user_may_do() {
     put(&ro, &ours, dir.path(), "mine.txt", b"objects are read-write", Headers::default());
     assert_eq!(wait(ro.delete(&ours, vec!["mine.txt".into()])).unwrap().deleted, 1);
     assert!(matches!(wait(ro.list(&theirs, "", None)), Err(S3Error::AccessDenied(_))));
+    // Its settings are read, not written: removing needs the Put* action too.
+    wait(root.set_bucket_tags(&ours, vec![("team".to_owned(), "a".to_owned())])).unwrap();
+    assert_eq!(wait(ro.bucket_tags(&ours)).unwrap().len(), 1);
+    assert_eq!(wait(ro.lifecycle(&ours)).unwrap(), []);
+    assert_eq!(wait(ro.cors(&ours)).unwrap(), []);
+    assert!(denied(wait(ro.set_bucket_tags(&ours, vec![("team".to_owned(), "b".to_owned())]))));
+    assert!(denied(wait(ro.set_bucket_tags(&ours, Vec::new()))), "removing is writing");
+    assert!(denied(wait(ro.set_cors(&ours, Vec::new()))));
+    assert!(denied(wait(ro.set_lifecycle(&ours, Vec::new()))));
+    assert!(matches!(wait(ro.bucket_tags(&theirs)), Err(S3Error::AccessDenied(_))), "out of reach");
 
     // Development, read-write buckets, but only under the project's names: a refused name is a refusal, not "taken";
     // a bucket of the account out of the user's reach is taken.
     let mine = format!("r3mtest-{stamp}-dev");
     wait(rw.create_bucket(&mine)).unwrap();
+    wait(rw.set_bucket_tags(&mine, vec![("team".to_owned(), "a".to_owned())])).unwrap();
+    wait(rw.set_bucket_tags(&mine, Vec::new())).unwrap();
     assert!(denied(wait(rw.create_bucket(&format!("elsewhere-{stamp}-dev")))), "names outside r3mtest-*-dev");
     assert!(matches!(wait(rw.create_bucket(&theirs)), Err(S3Error::BucketExists)), "taken in another account");
     wait(rw.delete_bucket(&mine, false)).unwrap();
