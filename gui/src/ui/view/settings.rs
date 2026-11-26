@@ -84,10 +84,14 @@ impl Root {
             .child(div().text_xs().text_color(theme.muted).child(about(tab)))
             .child(div().id("settings-body").flex().flex_col().gap_2().max_h(px(420.)).overflow_y_scroll().child(body))
             .when(!editable, |d| {
-                d.child(div().text_xs().text_color(theme.muted).child(format!(
-                    "Read-only: this profile's policies don't allow {} on this bucket.",
-                    tab.write_action()
-                )))
+                d.child(
+                    div().text_xs().text_color(theme.muted).debug_selector(|| "settings read-only".to_owned()).child(
+                        format!(
+                            "Read-only: this profile's policies don't allow {} on this bucket.",
+                            tab.write_action()
+                        ),
+                    ),
+                )
             })
             .children(dialog.error.clone().map(|e| {
                 div().text_xs().text_color(theme.danger).debug_selector(|| "settings error".to_owned()).child(e)
@@ -144,7 +148,9 @@ fn value(field: &Field, editable: bool, theme: &Theme, cx: &Context<Root>) -> An
         field.clone().into_any_element()
     } else {
         let text = field.read(cx).text().to_owned();
+        let selector = format!("settings value {text}");
         div()
+            .debug_selector(move || selector)
             .py_1()
             .font_family(MONO)
             .text_xs()
