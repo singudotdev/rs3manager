@@ -71,11 +71,17 @@ no_display 'no X server at DISPLAY=:9876' DISPLAY=:9876
 pid=$!
 # Its first frames, fonts loaded, and the profile's first request refused.
 sleep 15
-alive || fail "the app exited: $(cat "$work/app.log")"
+alive || fail "the app exited ($(status_of)): $(sed 's/\x1b\[[0-9;]*m//g' "$work/app.log")"
 if grep -q 'panicked' "$work/app.log"; then fail "the app panicked: $(cat "$work/app.log")"; fi
 
 # Whether the app is still running: `kill -0` also succeeds on a child that exited and wasn't waited for (a zombie),
 # which would pass for a live app.
+# Why it's gone, for the message: its exit status (128 + the signal when a signal killed it).
+status_of() {
+    local status=0
+    wait "$pid" 2>/dev/null || status=$?
+    echo "exit status $status"
+}
 alive() {
     [ "$(sed 's/.*) //' "/proc/$pid/stat" 2>/dev/null | cut -c1)" != Z ] && kill -0 "$pid" 2>/dev/null
 }
@@ -87,7 +93,7 @@ cpu() {
     ticks=$(getconf CLK_TCK)
     sed 's/.*) //' "/proc/$pid/stat" | awk -v t="$ticks" '{ print int(($12 + $13) * 100 / t) }'
 }
-alive || fail "the app exited: $(cat "$work/app.log")"
+alive || fail "the app exited ($(status_of)): $(sed 's/\x1b\[[0-9;]*m//g' "$work/app.log")"
 before=$(cpu)
 sleep 20
 after=$(cpu)
