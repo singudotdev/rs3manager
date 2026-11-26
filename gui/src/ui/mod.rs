@@ -2,6 +2,7 @@
 //! object's details on the right, transfers at the bottom, and dialogs over it all.
 //!
 //! - [`root`]: the window's state and what every action does to it.
+//! - `display`: whether Linux has a display to show the window on, checked before GPUI connects to it.
 //! - `browse`: buckets, folders, objects: listing, creating, renaming, deleting, metadata, previews.
 //! - `transfer`: uploads (also dropped files) and downloads, queued and running on the session.
 //! - `profiles`: the AWS CLI profiles dialog.
@@ -12,6 +13,8 @@
 //! - [`theme`]: colors and fonts.
 
 mod browse;
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+pub mod display;
 pub mod input;
 mod profiles;
 mod rights;
@@ -118,8 +121,13 @@ fn application() -> anyhow::Result<gpui::Application> {
 
 /// Opens the window and runs until it's closed.
 pub fn run() -> anyhow::Result<()> {
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    display::ensure_display()?;
     let engine = rs3manager_core::s3::Engine::new().context("couldn't start")?;
     let files = rs3manager_core::profiles::Files::from_env().context("couldn't find the AWS CLI's files")?;
+    // Why the window couldn't open, for the process to fail with: logging it and quitting exits 0 as if all was well.
+    let failure = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let reported = std::sync::Arc::clone(&failure);
     application()?.run(move |cx: &mut App| {
         if let Err(e) = cx.text_system().add_fonts(FONTS.iter().map(|&f| Cow::Borrowed(f)).collect()) {
             tracing::warn!(target: "rs3manager::ui", error = %e, "couldn't load the built-in fonts");
@@ -144,10 +152,14 @@ pub fn run() -> anyhow::Result<()> {
                 .detach(),
             Err(e) => {
                 tracing::error!(target: "rs3manager::ui", error = %e, "couldn't open the window");
+                *reported.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(e);
                 cx.quit();
             }
         }
         cx.activate(true);
     });
-    Ok(())
+    match failure.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take() {
+        Some(e) => Err(e.context("couldn't open the window")),
+        None => Ok(()),
+    }
 }

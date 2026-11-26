@@ -40,19 +40,49 @@ aws_access_key_id = SMOKEACCESSKEY
 aws_secret_access_key = smokesecretkey
 CREDENTIALS
 
-# With no display at all, the app fails within the timeout saying WHY, rather than running headless, unseen, forever,
-# or panicking.
-status=0
-env -u DISPLAY -u WAYLAND_DISPLAY -u WAYLAND_SOCKET timeout 30 "$app" >"$work/no-display.log" 2>&1 || status=$?
-[ "$status" -eq 1 ] || fail "with no display the app exited with $status, not 1: $(cat "$work/no-display.log")"
-grep -qF 'run rs3manager from a desktop session' "$work/no-display.log" ||
-    fail "with no display the app didn't say why: $(cat "$work/no-display.log")"
+# Runs a command where no display of this machine can be reached: a private mount namespace with the X sockets and the
+# runtime directory (Wayland's) emptied, so a developer's own session isn't opened by a failing check. Where that
+# isn't possible (CI runners have none to hide), as it is.
+hidden() {
+    if unshare -rm true 2>/dev/null; then
+        # shellcheck disable=SC2016 # expanded by the inner shell, not this one
+        unshare -rm sh -c 'mount -t tmpfs none /tmp/.X11-unix 2>/dev/null; if [ -n "${XDG_RUNTIME_DIR:-}" ]; then mount -t tmpfs none "$XDG_RUNTIME_DIR" 2>/dev/null; fi; exec "$@"' sh "$@"
+    else
+        "$@"
+    fi
+}
 
+# Started with ENV (none: no display at all), the app fails within the timeout saying WHY, rather than running
+# headless, unseen, forever, or panicking.
+no_display() {
+    local why=$1 status=0
+    shift
+    hidden env -u DISPLAY -u WAYLAND_DISPLAY -u WAYLAND_SOCKET "$@" timeout 30 "$app" >"$work/no-display.log" 2>&1 ||
+        status=$?
+    [ "$status" -eq 1 ] || fail "with '$*' the app exited with $status, not 1: $(cat "$work/no-display.log")"
+    grep -qF -- "$why" "$work/no-display.log" || fail "with '$*' the app didn't say why: $(cat "$work/no-display.log")"
+}
+no_display 'run rs3manager from the desktop session'
+no_display "no Wayland compositor at WAYLAND_DISPLAY=$work/no-wayland" WAYLAND_DISPLAY="$work/no-wayland"
+# Not :99, the first display xvfb-run -a tries: CI's own X server may be there.
+no_display 'no X server at DISPLAY=:9876' DISPLAY=:9876
+
+# Whether the app is still running: `kill -0` also succeeds on a child that exited and wasn't waited for (a zombie),
+# which would pass for a live app.
+alive() {
+    [ "$(sed 's/.*) //' "/proc/$pid/stat" 2>/dev/null | cut -c1)" != Z ] && kill -0 "$pid" 2>/dev/null
+}
+
+echo "step: the three no-display checks passed"
 "$app" >"$work/app.log" 2>&1 &
 pid=$!
 # Its first frames, fonts loaded, and the profile's first request refused.
 sleep 15
-kill -0 "$pid" 2>/dev/null || fail "the app exited: $(cat "$work/app.log")"
+alive || {
+    status=0
+    wait "$pid" 2>/dev/null || status=$?
+    fail "the app exited (status $status): $(sed 's/\x1b\[[0-9;]*m//g' "$work/app.log")"
+}
 if grep -q 'panicked' "$work/app.log"; then fail "the app panicked: $(cat "$work/app.log")"; fi
 
 # CPU time the app's process used, in hundredths of a second: utime and stime, fields 14 and 15 of /proc/PID/stat;
@@ -62,6 +92,12 @@ cpu() {
     ticks=$(getconf CLK_TCK)
     sed 's/.*) //' "/proc/$pid/stat" | awk -v t="$ticks" '{ print int(($12 + $13) * 100 / t) }'
 }
+alive || {
+    status=0
+    wait "$pid" 2>/dev/null || status=$?
+    fail "the app exited (status $status): $(sed 's/\x1b\[[0-9;]*m//g' "$work/app.log")"
+}
+echo "step: app up, measuring idle"
 before=$(cpu)
 sleep 20
 after=$(cpu)
@@ -69,10 +105,20 @@ used=$(((after - before) / 20))
 echo "idle: ${used}% of a core"
 [ "$used" -le "$idle_limit" ] || fail "the idle app used ${used}% of a core, over ${idle_limit}%"
 
+echo "step: taking the screenshot"
 if command -v import >/dev/null; then
-    import -window root "$out/app-linux.png"
+    timeout 60 import -window root "$out/app-linux.png"
+    # A window that opened but drew nothing leaves the screen black: the app isn't showing anything.
+    mean=$(identify -format '%[fx:mean]' "$out/app-linux.png")
+    echo "screenshot mean brightness: $mean"
+    if [ "$mean" = 0 ]; then
+        xwininfo -root -tree 2>/dev/null | head -20 || true
+        echo "--- app log"
+        tail -30 "$work/app.log"
+        fail "the screenshot is black: the window drew nothing"
+    fi
 else
     echo "no ImageMagick import: no screenshot"
 fi
-kill -0 "$pid" 2>/dev/null || fail "the app exited while idle: $(cat "$work/app.log")"
+alive || fail "the app exited while idle: $(cat "$work/app.log")"
 echo "PASS smoke-app.sh"
