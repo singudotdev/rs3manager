@@ -77,7 +77,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - run: |
           # shellcheck disable=SC2086 # one package per word
-          sudo apt-get update && sudo apt-get install -y $GUI_LINUX_DEPS xvfb mesa-vulkan-drivers imagemagick shellcheck
+          sudo apt-get update && sudo apt-get install -y $GUI_LINUX_DEPS xvfb mesa-vulkan-drivers imagemagick shellcheck x11-utils
       - run: shellcheck -x e2e/lib.sh e2e/smoke-app.sh dev/test-https.sh .github/package.sh
       - run: cargo build --release --locked -p rs3manager-app
       - run: xvfb-run -a -s "-screen 0 1280x800x24" e2e/smoke-app.sh

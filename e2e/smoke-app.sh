@@ -90,6 +90,15 @@ echo "idle: ${used}% of a core"
 
 if command -v import >/dev/null; then
     import -window root "$out/app-linux.png"
+    # A window that opened but drew nothing leaves the screen black: the app isn't showing anything.
+    mean=$(identify -format '%[fx:mean]' "$out/app-linux.png")
+    echo "screenshot mean brightness: $mean"
+    if [ "$mean" = 0 ]; then
+        xwininfo -root -tree 2>/dev/null | head -20 || true
+        echo "--- app log"
+        tail -30 "$work/app.log"
+        fail "the screenshot is black: the window drew nothing"
+    fi
 else
     echo "no ImageMagick import: no screenshot"
 fi
