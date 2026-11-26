@@ -71,8 +71,14 @@ no_display 'no X server at DISPLAY=:9876' DISPLAY=:9876
 pid=$!
 # Its first frames, fonts loaded, and the profile's first request refused.
 sleep 15
-kill -0 "$pid" 2>/dev/null || fail "the app exited: $(cat "$work/app.log")"
+alive || fail "the app exited: $(cat "$work/app.log")"
 if grep -q 'panicked' "$work/app.log"; then fail "the app panicked: $(cat "$work/app.log")"; fi
+
+# Whether the app is still running: `kill -0` also succeeds on a child that exited and wasn't waited for (a zombie),
+# which would pass for a live app.
+alive() {
+    [ "$(sed 's/.*) //' "/proc/$pid/stat" 2>/dev/null | cut -c1)" != Z ] && kill -0 "$pid" 2>/dev/null
+}
 
 # CPU time the app's process used, in hundredths of a second: utime and stime, fields 14 and 15 of /proc/PID/stat;
 # after the `(name)`, which may hold spaces, they're the 12th and 13th.
@@ -81,6 +87,7 @@ cpu() {
     ticks=$(getconf CLK_TCK)
     sed 's/.*) //' "/proc/$pid/stat" | awk -v t="$ticks" '{ print int(($12 + $13) * 100 / t) }'
 }
+alive || fail "the app exited: $(cat "$work/app.log")"
 before=$(cpu)
 sleep 20
 after=$(cpu)
@@ -102,5 +109,5 @@ if command -v import >/dev/null; then
 else
     echo "no ImageMagick import: no screenshot"
 fi
-kill -0 "$pid" 2>/dev/null || fail "the app exited while idle: $(cat "$work/app.log")"
+alive || fail "the app exited while idle: $(cat "$work/app.log")"
 echo "PASS smoke-app.sh"
