@@ -2,6 +2,7 @@
 //! object's details on the right, transfers at the bottom, and dialogs over it all.
 //!
 //! - [`root`]: the window's state and what every action does to it.
+//! - `display`: whether Linux has a display to show the window on, checked before GPUI connects to it.
 //! - `browse`: buckets, folders, objects: listing, creating, renaming, deleting, metadata, previews.
 //! - `transfer`: uploads (also dropped files) and downloads, queued and running on the session.
 //! - `profiles`: the AWS CLI profiles dialog.
@@ -12,6 +13,8 @@
 //! - [`theme`]: colors and fonts.
 
 mod browse;
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+pub mod display;
 pub mod input;
 mod profiles;
 mod rights;
@@ -118,6 +121,8 @@ fn application() -> anyhow::Result<gpui::Application> {
 
 /// Opens the window and runs until it's closed.
 pub fn run() -> anyhow::Result<()> {
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    display::ensure_display()?;
     let engine = rs3manager_core::s3::Engine::new().context("couldn't start")?;
     let files = rs3manager_core::profiles::Files::from_env().context("couldn't find the AWS CLI's files")?;
     application()?.run(move |cx: &mut App| {
