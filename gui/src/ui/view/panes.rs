@@ -83,8 +83,16 @@ impl Root {
                 .debug_selector(|| format!("bucket {name}"))
                 .on_click(cx.listener(move |this, _, window, cx| this.open_bucket(&name, window, cx)))
         });
-        let empty = (self.session.is_some() && !self.buckets_loading && self.buckets.is_empty())
-            .then(|| div().px_3().py_2().text_xs().text_color(theme.muted).child("No buckets yet"));
+        let empty = (self.session.is_some() && !self.buckets_loading && self.buckets.is_empty()).then(|| {
+            let text = if self.buckets_failed { "Couldn't list the buckets" } else { "No buckets yet" };
+            div()
+                .px_3()
+                .py_2()
+                .text_xs()
+                .text_color(theme.muted)
+                .child(text)
+                .debug_selector(|| "buckets empty".to_owned())
+        });
         div()
             .flex()
             .flex_col()
