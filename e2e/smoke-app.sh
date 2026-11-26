@@ -67,6 +67,7 @@ no_display "no Wayland compositor at WAYLAND_DISPLAY=$work/no-wayland" WAYLAND_D
 # Not :99, the first display xvfb-run -a tries: CI's own X server may be there.
 no_display 'no X server at DISPLAY=:9876' DISPLAY=:9876
 
+echo "step: the three no-display checks passed"
 "$app" >"$work/app.log" 2>&1 &
 pid=$!
 # Its first frames, fonts loaded, and the profile's first request refused.
@@ -94,6 +95,7 @@ alive || {
     wait "$pid" 2>/dev/null
     fail "the app exited (status $?): $(sed 's/\x1b\[[0-9;]*m//g' "$work/app.log")"
 }
+echo "step: app up, measuring idle"
 before=$(cpu)
 sleep 20
 after=$(cpu)
@@ -101,8 +103,9 @@ used=$(((after - before) / 20))
 echo "idle: ${used}% of a core"
 [ "$used" -le "$idle_limit" ] || fail "the idle app used ${used}% of a core, over ${idle_limit}%"
 
+echo "step: taking the screenshot"
 if command -v import >/dev/null; then
-    import -window root "$out/app-linux.png"
+    timeout 60 import -window root "$out/app-linux.png"
     # A window that opened but drew nothing leaves the screen black: the app isn't showing anything.
     mean=$(identify -format '%[fx:mean]' "$out/app-linux.png")
     echo "screenshot mean brightness: $mean"
