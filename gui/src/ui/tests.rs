@@ -133,6 +133,21 @@ fn type_into(cx: &mut VisualTestContext, field: &Entity<TextInput>, text: &str) 
     field.update(cx, |input, cx| input.set_text(text.to_owned(), cx));
 }
 
+/// A gateway nobody answers at says so in a line and doesn't pass for an account with no buckets. Needs no radosgw.
+#[gpui::test]
+fn an_unreachable_gateway_is_told_plainly(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let files = Files::in_dir(dir.path());
+    files.save(None, &ProfileEdit::new("test", "http://127.0.0.1:9", "", "KEY", "secret").unwrap()).unwrap();
+    let (view, cx) = window(cx, files);
+    let (failed, notice) = view.read_with(cx, |r, _| (r.buckets_failed, r.notice.as_ref().map(|n| n.text.to_string())));
+    assert!(failed, "the failed listing wasn't kept");
+    let notice = notice.expect("the failure wasn't shown");
+    assert!(notice.starts_with("Couldn't list the buckets: can't reach the gateway: "), "{notice}");
+    assert!(!notice.contains("DispatchFailure") && !notice.contains("os error"), "a raw error dump: {notice}");
+    assert!(cx.debug_bounds("buckets empty").is_some(), "the sidebar doesn't say anything about the failure");
+}
+
 #[gpui::test]
 #[ignore = "needs a radosgw: dev/test-rgw.sh"]
 fn browsing_previewing_and_editing_headers(cx: &mut TestAppContext) {

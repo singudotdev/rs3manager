@@ -117,6 +117,8 @@ pub struct Root {
     session_generation: u64,
     /// The account's buckets the profile may see.
     pub buckets: Vec<Bucket>,
+    /// Whether the last listing of the buckets failed, so the sidebar doesn't say the account has none.
+    pub buckets_failed: bool,
     /// What the profile may do, as its policies say.
     pub access: Access,
     /// Whether the buckets are being listed.
@@ -169,6 +171,7 @@ impl Root {
             session: None,
             session_generation: 0,
             buckets: Vec::new(),
+            buckets_failed: false,
             buckets_loading: false,
             access: Access::Unknown("not connected".to_owned()),
             browser: Browser::default(),

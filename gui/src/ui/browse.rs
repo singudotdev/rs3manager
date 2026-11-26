@@ -153,6 +153,7 @@ impl Root {
             move |s| s.list_buckets(check),
             |this, result, cx| {
                 this.buckets_loading = false;
+                this.buckets_failed = result.is_err();
                 match result {
                     Ok(mut buckets) => {
                         buckets.retain(|b| b.listable && this.access.may("s3:ListBucket", &b.name, None));
