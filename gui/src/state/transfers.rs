@@ -194,4 +194,22 @@ mod tests {
         assert_eq!(t.items().iter().map(|i| i.id).collect::<Vec<_>>(), [2, 3]);
         assert!(t.busy());
     }
+
+    #[test]
+    fn totals_count_the_unfinished_and_cancelling_all_stops_them() {
+        let mut t = Transfers::default();
+        for k in ["1", "2", "3"] {
+            t.add(download(k));
+        }
+        t.start_ready();
+        t.finish(1, Ok(()));
+        assert_eq!(t.totals(), (0, 0, 2), "nothing moved yet, two left");
+        t.cancel_all();
+        assert!(t.items().iter().all(|i| i.progress.get() == (0, 0)));
+        for id in [2, 3] {
+            t.finish(id, Err(S3Error::Cancelled));
+        }
+        assert!(!t.busy());
+        assert_eq!(t.totals(), (0, 0, 0));
+    }
 }

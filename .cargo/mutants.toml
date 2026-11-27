@@ -25,4 +25,10 @@ exclude_re = [
     'core/src/s3/policy\.rs:.*replace \+ with \* in glob$',
     # A comment sign at index 0 has nothing before it to end in whitespace, so `i >= 0` refuses it as `i > 0` does.
     'core/src/profiles/ini\.rs:.*replace > with >= in strip_comment$',
+    # Read the process's environment, which tests can't set (`set_var` is unsafe, and unsafe code is forbidden): what
+    # they make of it, `Files::from_vars` and `selected_by`, is what's tested.
+    'core/src/profiles/mod\.rs:.*replace (Files::from_env|selected_by_env) -> ',
+    # The bytes summed over transfers: only a real transfer moves them (`Progress`'s counters are the core's), which
+    # the window tests against Ceph show; the count beside them is tested.
+    'gui/src/state/transfers\.rs:150:(23|34): replace \+ with [-*] in Transfers::totals$',
 ]
