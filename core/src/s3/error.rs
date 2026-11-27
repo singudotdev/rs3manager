@@ -82,7 +82,7 @@ where
     }
     let message = aws_sdk_s3::error::DisplayErrorContext(&err).to_string();
     match err {
-        SdkError::DispatchFailure(_) => S3Error::Network(message),
+        SdkError::DispatchFailure(_) => S3Error::Network(root_cause(&err)),
         SdkError::TimeoutError(_) => S3Error::Network("the gateway didn't answer in time".to_owned()),
         // Building the request failed before sending it: no region or credentials resolved from the profile.
         SdkError::ConstructionFailure(_) => S3Error::Profile(message),
@@ -119,9 +119,50 @@ fn by_status(status: Option<u16>, message: String) -> S3Error {
     }
 }
 
+/// What went wrong at the bottom of `err`'s chain of causes, on one line, without the layers of wrappers the HTTP
+/// stack puts around it (`dispatch failure: io error: client error (Connect): tcp connect error: Connection refused
+/// (os error 111) (DispatchFailure(...))`): `Connection refused`.
+fn root_cause(err: &(dyn std::error::Error + 'static)) -> String {
+    let mut cause = err;
+    while let Some(next) = cause.source() {
+        cause = next;
+    }
+    let text = cause.to_string();
+    // The system's code after its message adds nothing for a reader.
+    let text = text.split(" (os error ").next().unwrap_or(&text).trim();
+    if text.is_empty() { "no answer".to_owned() } else { text.to_owned() }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fmt;
+
+    /// An error wrapping another, as the HTTP stack's layers do.
+    #[derive(Debug)]
+    struct Layer(&'static str, Option<Box<dyn std::error::Error + 'static>>);
+
+    impl fmt::Display for Layer {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str(self.0)
+        }
+    }
+
+    impl std::error::Error for Layer {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            self.1.as_deref()
+        }
+    }
+
+    #[test]
+    fn an_unreachable_gateway_is_told_by_its_root_cause_alone() {
+        let refused = Layer("Connection refused (os error 111)", None);
+        let chain = Layer("dispatch failure", Some(Box::new(Layer("io error", Some(Box::new(refused))))));
+        assert_eq!(root_cause(&chain), "Connection refused");
+        assert_eq!(S3Error::Network(root_cause(&chain)).to_string(), "can't reach the gateway: Connection refused");
+        assert_eq!(root_cause(&Layer("only", None)), "only");
+        assert_eq!(root_cause(&Layer("", None)), "no answer");
+    }
 
     #[test]
     fn codes_map_to_what_they_mean() {

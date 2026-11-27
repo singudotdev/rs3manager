@@ -225,7 +225,7 @@ impl TextInput {
         }
     }
 
-    /// Handles [`Copy`]; a masked field copies nothing.
+    /// Handles [`struct@Copy`]; a masked field copies nothing.
     fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
         if !self.selected_range.is_empty() && !self.masked {
             cx.write_to_clipboard(ClipboardItem::new_string(self.content[self.selected_range.clone()].to_string()));

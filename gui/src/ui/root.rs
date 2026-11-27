@@ -5,6 +5,7 @@
 use super::browse::Details;
 use super::input::{Changed, TextInput};
 use super::profiles::{ProfileMenu, ProfilesDialog};
+use super::settings::SettingsDialog;
 use super::share::ShareDialog;
 use crate::state::browser::{Browser, Row};
 use crate::state::transfers::{Job, Transfers};
@@ -51,6 +52,8 @@ pub enum Modal {
     Profiles(ProfilesDialog),
     /// A download link to an object.
     Share(ShareDialog),
+    /// A bucket's tags, lifecycle rules and CORS rules.
+    Settings(SettingsDialog),
     /// Uploads that would replace objects already there: replace them, skip them, or upload nothing.
     Replace {
         /// Every upload asked for.
@@ -78,6 +81,15 @@ pub enum Confirmed {
     },
     /// Removes profile `name` from the AWS CLI's files.
     RemoveProfile(String),
+    /// Deletes version `id` of object `key` in `bucket`, for good.
+    DeleteVersion {
+        /// The bucket.
+        bucket: String,
+        /// The object.
+        key: String,
+        /// The version.
+        id: String,
+    },
 }
 
 /// What submitting a name does.
@@ -117,6 +129,8 @@ pub struct Root {
     session_generation: u64,
     /// The account's buckets the profile may see.
     pub buckets: Vec<Bucket>,
+    /// Whether the last listing of the buckets failed, so the sidebar doesn't say the account has none.
+    pub buckets_failed: bool,
     /// What the profile may do, as its policies say.
     pub access: Access,
     /// Whether the buckets are being listed.
@@ -169,6 +183,7 @@ impl Root {
             session: None,
             session_generation: 0,
             buckets: Vec::new(),
+            buckets_failed: false,
             buckets_loading: false,
             access: Access::Unknown("not connected".to_owned()),
             browser: Browser::default(),

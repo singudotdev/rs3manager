@@ -4,6 +4,7 @@ use super::super::browse::{Details, HeadersForm, PreviewState};
 use super::super::rights;
 use super::super::root::Root;
 use super::super::theme::{MONO, Theme};
+use super::super::versions::VersionsState;
 use super::super::widgets::{Kind, button, label};
 use crate::state::format::{base_name, size, when};
 use gpui::{Context, Div, ObjectFit, Stateful, StyledImage as _, Window, div, img, prelude::*, px};
@@ -111,6 +112,7 @@ impl Root {
                 .child(actions)
                 .children(facts)
                 .child(section("Preview", theme).child(preview(details, theme)))
+                .children(self.versions_section(details, theme, cx))
                 .children(details.form.as_ref().map(|form| {
                     let editable = self.may_on_key(rights::EDIT_HEADERS, &details.key);
                     Self::headers_form(form, details, editable, theme, cx)
@@ -182,6 +184,90 @@ impl Root {
                         ),
                 )
             })
+    }
+}
+
+impl Root {
+    /// The object's versions, when its bucket keeps them: each with its date, size and ID, and Restore and Delete as
+    /// the policies allow.
+    fn versions_section(&self, details: &Details, theme: &Theme, cx: &mut Context<Self>) -> Option<Div> {
+        let body = match &details.versions {
+            VersionsState::Hidden => return None,
+            VersionsState::Loading => div().text_xs().text_color(theme.muted).child("Loading…"),
+            VersionsState::Failed(why) => {
+                div().text_xs().text_color(theme.danger).child(format!("Couldn't list the versions: {why}"))
+            }
+            VersionsState::Ready(versions) => {
+                let (restore, delete) = self.version_rights(&details.key);
+                let rows: Vec<_> = versions
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| {
+                        let what = match (v.latest, v.delete_marker) {
+                            (true, true) => "Deleted (delete marker)",
+                            (true, false) => "Current",
+                            (false, true) => "Delete marker",
+                            (false, false) => "Earlier",
+                        };
+                        let facts =
+                            if v.delete_marker { v.id.clone() } else { format!("{} · {}", size(v.size), v.id) };
+                        let (to_restore, to_delete) = (v.id.clone(), v.clone());
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .debug_selector(move || format!("version {i}"))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .gap_2()
+                                            .text_xs()
+                                            .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child(what))
+                                            .child(
+                                                div()
+                                                    .text_color(theme.muted)
+                                                    .child(v.modified.map_or_else(String::new, when)),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .font_family(MONO)
+                                            .text_color(theme.muted)
+                                            .truncate()
+                                            .child(facts),
+                                    ),
+                            )
+                            .when(restore && !v.latest && !v.delete_marker, |d| {
+                                d.child(
+                                    button(("v-restore", i), "Restore", Kind::Quiet, false, theme)
+                                        .debug_selector(move || format!("restore version {i}"))
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.restore_version(to_restore.clone(), cx);
+                                        })),
+                                )
+                            })
+                            .when(delete, |d| {
+                                d.child(
+                                    button(("v-delete", i), "Delete", Kind::Quiet, false, theme)
+                                        .debug_selector(move || format!("delete version {i}"))
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.ask_delete_version(&to_delete, window, cx);
+                                        })),
+                                )
+                            })
+                    })
+                    .collect();
+                div().flex().flex_col().gap_2().children(rows)
+            }
+        };
+        Some(section("Versions", theme).child(body))
     }
 }
 

@@ -1,0 +1,68 @@
+# Publishes a release when a version tag is pushed:
+#
+#   git tag -s v0.1.0 -m "v0.1.0" && git push origin v0.1.0
+#
+# Builds the app in release mode on Linux (x86_64), packages it with its launcher entry and icon, and attaches the
+# archive with its SHA-256 checksum to a GitHub release. A change to this file builds and packages the same way on its
+# pull request, without publishing.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths: [".github/workflows/release.yml", ".github/package.sh"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # What the app (GPUI) needs to build on Linux.
+  GUI_LINUX_DEPS: libfontconfig-dev libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libvulkan1
+
+jobs:
+  package:
+    name: package (linux x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Tag matches Cargo.toml
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME doesn't match Cargo.toml version $version"
+            exit 1
+          fi
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - run: |
+          # shellcheck disable=SC2086 # one package per word
+          sudo apt-get update && sudo apt-get install -y $GUI_LINUX_DEPS
+      - run: cargo build --release --locked -p rs3manager-app
+      - run: .github/package.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: rs3manager-linux-x86_64
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: publish
+    needs: package
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: rs3manager-linux-x86_64
+          path: dist
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

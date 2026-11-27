@@ -3,6 +3,9 @@
 # ACLs, nor write IAM (so nor remove its guardrails), still reads IAM and does its normal work, and `breakglass` lifts
 # them for `account` to put back; a devsecops admin sets up a project but can't set bucket policies nor touch the
 # root's or another admin's guardrails or keys. Run by dev/test-rgw.sh; uses a throwaway account.
+# `CMD && ok ... || fail ...` and `CMD && fail ... || ok ...` are used as if-then-else on purpose: `ok` only prints and
+# `fail` exits, so neither can send the other branch running.
+# shellcheck disable=SC2015
 set -euo pipefail
 cd "$(dirname "$0")/.."
 name=r3mguard-test

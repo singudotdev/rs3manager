@@ -83,8 +83,16 @@ impl Root {
                 .debug_selector(|| format!("bucket {name}"))
                 .on_click(cx.listener(move |this, _, window, cx| this.open_bucket(&name, window, cx)))
         });
-        let empty = (self.session.is_some() && !self.buckets_loading && self.buckets.is_empty())
-            .then(|| div().px_3().py_2().text_xs().text_color(theme.muted).child("No buckets yet"));
+        let empty = (self.session.is_some() && !self.buckets_loading && self.buckets.is_empty()).then(|| {
+            let text = if self.buckets_failed { "Couldn't list the buckets" } else { "No buckets yet" };
+            div()
+                .px_3()
+                .py_2()
+                .text_xs()
+                .text_color(theme.muted)
+                .child(text)
+                .debug_selector(|| "buckets empty".to_owned())
+        });
         div()
             .flex()
             .flex_col()
@@ -223,19 +231,26 @@ impl Root {
             })
     }
 
-    /// Deleting the open bucket, as far as the policies allow; `None` when they allow neither way.
+    /// The open bucket's settings and deleting it, as far as the policies allow; `None` when they allow none.
     fn bucket_actions(&self, bucket: &str, theme: &Theme, cx: &mut Context<Self>) -> Option<Div> {
         let (delete, empty) = (self.may_delete_bucket(bucket, false), self.may_delete_bucket(bucket, true));
+        let settings = !self.settings_tabs(bucket).is_empty();
         let (a, b) = (bucket.to_owned(), bucket.to_owned());
-        delete.then(|| {
+        (settings || delete).then(|| {
             div()
                 .flex()
                 .gap_1()
-                .child(
-                    button("delete-bucket", "Delete bucket", Kind::Quiet, false, theme).on_click(
+                .when(settings, |d| {
+                    d.child(
+                        button("bucket-settings", "Settings", Kind::Quiet, false, theme)
+                            .on_click(cx.listener(|this, _, window, cx| this.open_settings(window, cx))),
+                    )
+                })
+                .when(delete, |d| {
+                    d.child(button("delete-bucket", "Delete bucket", Kind::Quiet, false, theme).on_click(
                         cx.listener(move |this, _, window, cx| this.ask_delete_bucket(&a, false, window, cx)),
-                    ),
-                )
+                    ))
+                })
                 .when(empty, |d| {
                     d.child(
                         button("empty-bucket", "Empty and delete", Kind::Quiet, false, theme).on_click(

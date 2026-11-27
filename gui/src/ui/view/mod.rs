@@ -4,11 +4,13 @@
 //! - [`list`]: the folder's rows.
 //! - [`details`]: the selected object's details, preview and headers.
 //! - [`overlays`]: transfers, the message bar and dialogs.
+//! - [`settings`]: a bucket's settings dialog.
 
 mod details;
 mod list;
 mod overlays;
 mod panes;
+mod settings;
 
 use super::profiles::ProfilesDialog;
 use super::root::{Modal, Root};
@@ -39,6 +41,8 @@ impl Root {
             }
             Some(Modal::Profiles(ProfilesDialog { form: Some(_) })) => self.save_profile(cx),
             Some(Modal::Share(_)) => self.copy_share_link(cx),
+            Some(Modal::Settings(dialog)) if dialog.confirm_remove => self.remove_settings(cx),
+            Some(Modal::Settings(_)) => self.save_settings(cx),
             Some(Modal::ProfileMenu(_)) => self.pick_highlighted(window, cx),
             // Enter takes the safe choice: the new files only, and nothing when there are none.
             Some(Modal::Replace { .. }) => self.replace_chosen(false, window, cx),

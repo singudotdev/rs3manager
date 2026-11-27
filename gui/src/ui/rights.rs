@@ -15,6 +15,13 @@ pub const RENAME: &[&str] = &["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
 /// Changing an object's headers: a copy onto itself.
 pub const EDIT_HEADERS: &[&str] = &["s3:GetObject", "s3:PutObject"];
 
+/// Listing an object's versions, a bucket-wide right.
+pub const LIST_VERSIONS: &str = "s3:ListBucketVersions";
+/// Restoring a version: reading it, then writing it over the key.
+pub const RESTORE_VERSION: &[&str] = &["s3:GetObjectVersion", "s3:PutObject"];
+/// Deleting a version for good.
+pub const DELETE_VERSION: &[&str] = &["s3:DeleteObjectVersion"];
+
 /// The key standing for "a new object in this folder" when asking whether one may be written there.
 const NEW_OBJECT: &str = "new-object";
 

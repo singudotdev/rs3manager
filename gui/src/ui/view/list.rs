@@ -123,7 +123,7 @@ impl Root {
         let name = name_in(row.key(), self.browser.prefix()).to_owned();
         let (size_text, when_text) = match row {
             Row::Folder(_) => (String::new(), String::new()),
-            Row::Object(o) => (size(o.size), o.modified.map(when).unwrap_or_default()),
+            Row::Object(o) => (size(o.size), o.modified.map_or_else(String::new, when)),
         };
         let folder = matches!(row, Row::Folder(_));
         let (selector, name_selector) = {

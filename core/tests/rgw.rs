@@ -178,6 +178,49 @@ fn fetch(url: &str) -> (u16, Vec<u8>) {
 
 #[test]
 #[ignore = "needs a radosgw: dev/test-rgw.sh"]
+fn an_interrupted_download_continues_when_the_object_is_unchanged() {
+    let (_engine, session, bucket, dir) = setup("resume");
+    let contents: Vec<u8> = (0..4u32 * 1024 * 1024 / 4).flat_map(u32::to_le_bytes).collect();
+    let path = dir.path().join("src.bin");
+    std::fs::write(&path, &contents).unwrap();
+    wait(session.upload(&bucket, "r.bin", &path, Headers::default(), Progress::new())).unwrap();
+    let etag = wait(session.head(&bucket, "r.bin")).unwrap().etag.unwrap();
+    let dest = dir.path().join("r.bin");
+    let partial = dir.path().join(".r.bin.rs3manager-part");
+    let sidecar = dir.path().join(".r.bin.rs3manager-part.etag");
+
+    // What an earlier try left: zeros where the object has data, so only a continued download keeps them.
+    let half = contents.len() / 2;
+    std::fs::write(&partial, vec![0u8; half]).unwrap();
+    std::fs::write(&sidecar, format!("\"{etag}\"")).unwrap();
+    let progress = Progress::new();
+    wait(session.download(&bucket, "r.bin", &dest, progress.clone())).unwrap();
+    let got = std::fs::read(&dest).unwrap();
+    assert!(got[..half].iter().all(|b| *b == 0), "the first half was fetched again");
+    assert!(got[half..] == contents[half..], "the rest differs");
+    assert_eq!(progress.get(), (contents.len() as u64, contents.len() as u64));
+    assert!(!partial.exists() && !sidecar.exists(), "the pieces are left behind");
+
+    // The same leftovers of another object (a different ETag) are not continued.
+    std::fs::write(&partial, vec![0u8; half]).unwrap();
+    std::fs::write(&sidecar, "\"not-this-object\"").unwrap();
+    wait(session.download(&bucket, "r.bin", &dest, Progress::new())).unwrap();
+    assert!(std::fs::read(&dest).unwrap() == contents, "a stale partial was continued");
+
+    // A cancelled download keeps its piece for the next try; a missing object leaves nothing.
+    let cancelled = Progress::new();
+    cancelled.cancel();
+    let result = wait(session.download(&bucket, "r.bin", &dir.path().join("c.bin"), cancelled));
+    assert!(matches!(result, Err(S3Error::Cancelled)), "{result:?}");
+    let missing = dir.path().join("missing.bin");
+    assert!(matches!(wait(session.download(&bucket, "nope", &missing, Progress::new())), Err(S3Error::NotFound(_))));
+    assert!(!dir.path().join(".missing.bin.rs3manager-part").exists());
+    assert!(!dir.path().join(".missing.bin.rs3manager-part.etag").exists());
+    wait(session.delete_bucket(&bucket, true)).unwrap();
+}
+
+#[test]
+#[ignore = "needs a radosgw: dev/test-rgw.sh"]
 fn shared_links_download_without_credentials_until_they_expire() {
     let (_engine, session, bucket, dir) = setup("share");
     // A key that needs escaping in the URL, as a signature over the wrong encoding is refused.
@@ -250,11 +293,23 @@ fn group_policies_decide_what_a_project_user_may_do() {
     put(&ro, &ours, dir.path(), "mine.txt", b"objects are read-write", Headers::default());
     assert_eq!(wait(ro.delete(&ours, vec!["mine.txt".into()])).unwrap().deleted, 1);
     assert!(matches!(wait(ro.list(&theirs, "", None)), Err(S3Error::AccessDenied(_))));
+    // Its settings are read, not written: removing needs the Put* action too.
+    wait(root.set_bucket_tags(&ours, vec![("team".to_owned(), "a".to_owned())])).unwrap();
+    assert_eq!(wait(ro.bucket_tags(&ours)).unwrap().len(), 1);
+    assert_eq!(wait(ro.lifecycle(&ours)).unwrap(), []);
+    assert_eq!(wait(ro.cors(&ours)).unwrap(), []);
+    assert!(denied(wait(ro.set_bucket_tags(&ours, vec![("team".to_owned(), "b".to_owned())]))));
+    assert!(denied(wait(ro.set_bucket_tags(&ours, Vec::new()))), "removing is writing");
+    assert!(denied(wait(ro.set_cors(&ours, Vec::new()))));
+    assert!(denied(wait(ro.set_lifecycle(&ours, Vec::new()))));
+    assert!(matches!(wait(ro.bucket_tags(&theirs)), Err(S3Error::AccessDenied(_))), "out of reach");
 
     // Development, read-write buckets, but only under the project's names: a refused name is a refusal, not "taken";
     // a bucket of the account out of the user's reach is taken.
     let mine = format!("r3mtest-{stamp}-dev");
     wait(rw.create_bucket(&mine)).unwrap();
+    wait(rw.set_bucket_tags(&mine, vec![("team".to_owned(), "a".to_owned())])).unwrap();
+    wait(rw.set_bucket_tags(&mine, Vec::new())).unwrap();
     assert!(denied(wait(rw.create_bucket(&format!("elsewhere-{stamp}-dev")))), "names outside r3mtest-*-dev");
     assert!(matches!(wait(rw.create_bucket(&theirs)), Err(S3Error::BucketExists)), "taken in another account");
     wait(rw.delete_bucket(&mine, false)).unwrap();
@@ -288,4 +343,100 @@ fn a_project_user_reads_its_own_policies() {
     assert!(root.may("s3:CreateBucket", "anything-at-all", None) && root.may("s3:DeleteObject", "b", Some("k")));
     assert!(!root.may("s3:PutBucketPolicy", "r3mtest-web-prod", None), "no bucket policies, even for the root");
     assert_eq!(root.bucket_patterns(), None, "any name may be tried");
+}
+
+#[test]
+#[ignore = "needs a radosgw: dev/test-rgw.sh"]
+fn a_buckets_tags_lifecycle_and_cors_are_read_written_and_removed() {
+    use rs3manager_core::s3::{CorsRule, LifecycleRule};
+    let (_engine, session, bucket, _dir) = setup("settings");
+
+    assert_eq!(wait(session.bucket_tags(&bucket)).unwrap(), [], "a new bucket has no tags");
+    let tags = vec![("team".to_owned(), "a".to_owned()), ("env".to_owned(), "dev".to_owned())];
+    wait(session.set_bucket_tags(&bucket, tags.clone())).unwrap();
+    let mut read = wait(session.bucket_tags(&bucket)).unwrap();
+    read.sort();
+    assert_eq!(read, [tags[1].clone(), tags[0].clone()]);
+    let twice = vec![("k".to_owned(), "1".to_owned()), ("k".to_owned(), "2".to_owned())];
+    assert!(matches!(wait(session.set_bucket_tags(&bucket, twice)), Err(S3Error::Invalid(_))));
+    wait(session.set_bucket_tags(&bucket, Vec::new())).unwrap();
+    assert_eq!(wait(session.bucket_tags(&bucket)).unwrap(), []);
+
+    assert_eq!(wait(session.lifecycle(&bucket)).unwrap(), [], "a new bucket has no lifecycle");
+    let rules = vec![
+        LifecycleRule { prefix: "tmp/".to_owned(), expire_days: Some(7), ..LifecycleRule::new("tmp") },
+        LifecycleRule { enabled: false, abort_days: Some(2), noncurrent_days: Some(30), ..LifecycleRule::new("all") },
+    ];
+    wait(session.set_lifecycle(&bucket, rules.clone())).unwrap();
+    let mut read = wait(session.lifecycle(&bucket)).unwrap();
+    read.sort_by(|a, b| b.id.cmp(&a.id));
+    assert_eq!(read, rules);
+    wait(session.set_lifecycle(&bucket, Vec::new())).unwrap();
+    assert_eq!(wait(session.lifecycle(&bucket)).unwrap(), []);
+
+    assert_eq!(wait(session.cors(&bucket)).unwrap(), [], "a new bucket has no CORS");
+    let cors = vec![CorsRule {
+        id: Some("app".to_owned()),
+        origins: vec!["https://app.example.com".to_owned()],
+        methods: vec!["GET".to_owned(), "PUT".to_owned()],
+        allowed_headers: vec!["*".to_owned()],
+        expose_headers: vec!["ETag".to_owned()],
+        max_age: Some(600),
+    }];
+    wait(session.set_cors(&bucket, cors.clone())).unwrap();
+    assert_eq!(wait(session.cors(&bucket)).unwrap(), cors);
+    wait(session.set_cors(&bucket, Vec::new())).unwrap();
+    assert_eq!(wait(session.cors(&bucket)).unwrap(), []);
+    wait(session.delete_bucket(&bucket, true)).unwrap();
+}
+
+#[test]
+#[ignore = "needs a radosgw: dev/test-rgw.sh"]
+fn an_objects_versions_are_listed_restored_and_deleted() {
+    use rs3manager_core::s3::Versioning;
+    let (_engine, session, bucket, dir) = setup("versions");
+    let read = |key: &str| wait(session.preview(&bucket, key, 64)).unwrap().bytes;
+    let ids = |key: &str| wait(session.versions(&bucket, key)).unwrap();
+
+    assert_eq!(wait(session.versioning(&bucket)).unwrap(), Versioning::Off);
+    put(&session, &bucket, dir.path(), "a.txt", b"zero", Headers::default());
+    let before = ids("a.txt");
+    assert_eq!((before.len(), before[0].id.as_str(), before[0].latest), (1, "null", true), "{before:?}");
+
+    wait(session.set_versioning(&bucket, true)).unwrap();
+    assert_eq!(wait(session.versioning(&bucket)).unwrap(), Versioning::Enabled);
+    let headers = Headers { content_type: Some("text/plain".into()), ..Headers::default() };
+    put(&session, &bucket, dir.path(), "a.txt", b"one", headers.clone());
+    put(&session, &bucket, dir.path(), "a.txt", b"two!", headers);
+    put(&session, &bucket, dir.path(), "a.txt.bak", b"another key", Headers::default());
+    let versions = ids("a.txt");
+    assert_eq!(versions.len(), 3, "a.txt.bak's aren't a.txt's: {versions:?}");
+    assert!(versions[0].latest && versions[0].size == 4 && versions[2].id == "null", "{versions:?}");
+    assert!(versions.iter().skip(1).all(|v| !v.latest && !v.delete_marker));
+
+    // Restoring the first version makes a new current one holding it; the others stay.
+    let info = wait(session.restore_version(&bucket, "a.txt", "null")).unwrap();
+    assert_eq!((info.size, read("a.txt")), (4, b"zero".to_vec()));
+    let after = ids("a.txt");
+    assert_eq!(after.len(), 4);
+    assert_eq!(after[0].id, info.version_id.clone().unwrap());
+
+    // Deleting a version is for good; deleting the current one makes the one before current.
+    let one = versions[1].id.clone();
+    wait(session.delete_version(&bucket, "a.txt", &one)).unwrap();
+    assert!(ids("a.txt").iter().all(|v| v.id != one));
+    wait(session.delete_version(&bucket, "a.txt", &after[0].id)).unwrap();
+    assert_eq!(read("a.txt"), b"two!");
+
+    // A delete leaves a marker on top; deleting the marker brings the object back.
+    assert_eq!(wait(session.delete(&bucket, vec!["a.txt".into()])).unwrap().deleted, 1);
+    let marked = ids("a.txt");
+    assert!(marked[0].latest && marked[0].delete_marker, "{marked:?}");
+    assert!(matches!(wait(session.head(&bucket, "a.txt")), Err(S3Error::NotFound(_))));
+    wait(session.delete_version(&bucket, "a.txt", &marked[0].id)).unwrap();
+    assert_eq!(read("a.txt"), b"two!");
+
+    wait(session.set_versioning(&bucket, false)).unwrap();
+    assert_eq!(wait(session.versioning(&bucket)).unwrap(), Versioning::Suspended);
+    wait(session.delete_bucket(&bucket, true)).unwrap();
 }

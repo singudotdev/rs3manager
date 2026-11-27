@@ -2,8 +2,9 @@
 
 A desktop app for developers to work with the buckets and objects of their Ceph RADOS Gateway (radosgw) account, as
 they did in the MinIO console: browse folders, upload (files, folders, or dropped on the window), download, rename or
-move, delete, preview text and images, edit an object's headers and metadata, and share a download link that expires
-(one hour to seven days). Written in Rust with
+move, delete, preview text and images, edit an object's headers and metadata, share a download link that expires
+(one hour to seven days), restore or delete an object's earlier versions, and edit a bucket's tags, lifecycle rules,
+CORS rules and versioning. Bucket policies and ACLs stay out (`docs/decisions/0005-*`). Written in Rust with
 [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui).
 
 Cluster administration (accounts, users, quotas) stays with the team running Ceph; rs3manager only does what an
@@ -75,6 +76,9 @@ On Linux GPUI needs the Wayland/X11, Vulkan and font development packages Zed li
 [building on Linux](https://github.com/zed-industries/zed/blob/main/docs/src/development/linux.md).
 
 ### Installing on Linux
+
+From a [release](https://github.com/singudotdev/rs3manager/releases): unpack `rs3manager-VERSION-linux-x86_64.tar.gz`
+(check it with its `.sha256`) and copy the files as below, or build from source:
 
 Into `~/.local`, with a launcher entry and icon (the window's app id is `rs3manager`, so docks group it under them):
 

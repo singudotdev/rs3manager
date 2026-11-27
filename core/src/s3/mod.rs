@@ -5,11 +5,13 @@
 //! every operation of a [`Session`] is spawned there and handed back as a [`Pending`], a plain future any executor
 //! can await, so tokio never runs inside GPUI's async code (see `docs/decisions/0001-*`).
 //!
-//! - [`access`]: what the profile's own IAM policies let it do, evaluated by [`policy`].
-//! - [`error`]: what a failure means.
+//! - `access`: what the profile's own IAM policies let it do, evaluated by [`policy`].
+//! - `error`: what a failure means.
 //! - [`names`]: bucket names, keys and metadata checked before they're sent.
 //! - `ops`: buckets, listings, metadata, rename, delete.
+//! - [`settings`]: a bucket's tags, lifecycle rules and CORS rules.
 //! - `transfer`: uploads, downloads and their progress.
+//! - [`versions`]: an object's versions, and whether a bucket keeps them.
 
 mod access;
 mod error;
@@ -17,11 +19,15 @@ pub mod names;
 mod ops;
 pub mod policy;
 mod rgw_iam;
+pub mod settings;
 mod transfer;
+pub mod versions;
 
 pub use access::Access;
 pub use error::S3Error;
+pub use settings::{BucketTag, CorsRule, LifecycleRule};
 pub use transfer::{Progress, local_path_for, walk};
+pub use versions::{Version, Versioning};
 
 use crate::profiles::{DEFAULT_REGION, Files};
 use aws_runtime::env_config::file::{EnvConfigFileKind, EnvConfigFiles};

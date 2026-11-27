@@ -1,0 +1,89 @@
+# Checks every push and pull request: formatting, lints, dependencies and the tests that need no Ceph.
+# The integration tests (core/tests/rgw.rs, the window tests) run against a local Ceph: dev/test-rgw.sh.
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request makes the older run's result moot: stop it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # What the app (GPUI) needs to build on Linux; the core needs nothing.
+  GUI_LINUX_DEPS: libfontconfig-dev libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libvulkan1
+
+jobs:
+  lint:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - run: |
+          # shellcheck disable=SC2086 # one package per word
+          sudo apt-get update && sudo apt-get install -y $GUI_LINUX_DEPS
+      - run: cargo fmt --all --check
+      # The lint policy (pedantic, no unsafe) lives in Cargo.toml; here any warning fails the build.
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # Broken intra-doc links and malformed doc comments.
+      - run: cargo doc --workspace --no-deps --document-private-items --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  deny:
+    name: licenses + advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # deny.toml: the licenses an AGPL-3.0-only program may include, the allowed git sources, and the advisories
+      # ignored with their reason. A new advisory fails the build until it's fixed or ignored there.
+      - uses: EmbarkStudios/cargo-deny-action@17aeb3c839e42274e2b8adf721c8c65edfdc74dd # v2
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - run: |
+          # shellcheck disable=SC2086 # one package per word
+          sudo apt-get update && sudo apt-get install -y $GUI_LINUX_DEPS
+      - run: cargo test --workspace --locked
+
+  # The app as released (with Mesa's software Vulkan: the runner has no GPU) starts, stays up and idles under a virtual display, and says why with none; the screenshot is
+  # kept to look at (e2e/smoke-app.sh).
+  app-smoke:
+    name: app smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - run: |
+          # shellcheck disable=SC2086 # one package per word
+          sudo apt-get update && sudo apt-get install -y $GUI_LINUX_DEPS xvfb mesa-vulkan-drivers imagemagick shellcheck x11-utils
+      - run: shellcheck -x dev/*.sh e2e/*.sh .github/package.sh
+      - run: cargo build --release --locked -p rs3manager-app
+      - run: timeout 300 xvfb-run -a -s "-screen 0 1280x800x24" e2e/smoke-app.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: app-smoke
+          path: target/smoke
+          if-no-files-found: ignore
