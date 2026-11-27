@@ -13,11 +13,13 @@ pub enum Tab {
     Lifecycle,
     /// Its CORS rules.
     Cors,
+    /// Whether it keeps versions.
+    Versioning,
 }
 
 impl Tab {
     /// Every tab, in the order shown.
-    pub const ALL: [Self; 3] = [Self::Tags, Self::Lifecycle, Self::Cors];
+    pub const ALL: [Self; 4] = [Self::Tags, Self::Lifecycle, Self::Cors, Self::Versioning];
 
     /// Its title.
     pub fn label(self) -> &'static str {
@@ -25,6 +27,7 @@ impl Tab {
             Self::Tags => "Tags",
             Self::Lifecycle => "Lifecycle",
             Self::Cors => "CORS",
+            Self::Versioning => "Versioning",
         }
     }
 
@@ -34,6 +37,7 @@ impl Tab {
             Self::Tags => "s3:GetBucketTagging",
             Self::Lifecycle => "s3:GetLifecycleConfiguration",
             Self::Cors => "s3:GetBucketCORS",
+            Self::Versioning => "s3:GetBucketVersioning",
         }
     }
 
@@ -43,6 +47,7 @@ impl Tab {
             Self::Tags => "s3:PutBucketTagging",
             Self::Lifecycle => "s3:PutLifecycleConfiguration",
             Self::Cors => "s3:PutBucketCORS",
+            Self::Versioning => "s3:PutBucketVersioning",
         }
     }
 
@@ -52,6 +57,7 @@ impl Tab {
             Self::Tags => "tags",
             Self::Lifecycle => "lifecycle rules",
             Self::Cors => "CORS rules",
+            Self::Versioning => "versioning",
         }
     }
 }
@@ -279,6 +285,8 @@ mod tests {
                 "s3:PutLifecycleConfiguration",
                 "s3:GetBucketCORS",
                 "s3:PutBucketCORS",
+                "s3:GetBucketVersioning",
+                "s3:PutBucketVersioning",
             ]
         );
     }

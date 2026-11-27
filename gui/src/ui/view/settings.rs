@@ -2,12 +2,13 @@
 //! the profile may not write shows its values as text, saying why.
 
 use super::super::root::Root;
-use super::super::settings::{CorsFields, Field, Fields, RuleFields, SettingsDialog, TabState, TagFields};
+use super::super::settings::{CorsFields, Field, Fields, Loaded, RuleFields, SettingsDialog, TabState, TagFields};
 use super::super::theme::{MONO, Theme};
 use super::super::widgets::{Kind, button, checkbox, label};
 use super::overlays::{card, footer, heading};
 use crate::state::settings::Tab;
 use gpui::{AnyElement, Context, Div, div, prelude::*, px};
+use rs3manager_core::s3::Versioning;
 use rs3manager_core::s3::settings::CORS_METHODS;
 
 impl Root {
@@ -26,9 +27,13 @@ impl Root {
             TabState::Failed(why) => {
                 div().text_xs().text_color(theme.danger).child(format!("Couldn't read the {}: {why}", tab.noun()))
             }
+            TabState::Ready { fields: Fields::Versioning(on), loaded: Loaded::Versioning(now) } => {
+                versioning_body(*now, *on, editable, theme, cx)
+            }
             TabState::Ready { fields, .. } => tab_body(fields, editable, theme, cx),
         };
         let ready = matches!(dialog.state, TabState::Ready { .. });
+        let rows = tab != Tab::Versioning;
         let empty = match &dialog.state {
             TabState::Ready { loaded, .. } => loaded.is_empty(),
             _ => true,
@@ -52,7 +57,7 @@ impl Root {
                 )
         } else {
             footer()
-                .when(editable && ready, |d| {
+                .when(editable && ready && rows, |d| {
                     d.child(
                         button("settings-remove-all", "Remove all", Kind::Danger, busy || empty, theme)
                             .on_click(cx.listener(|this, _, _, cx| this.ask_remove_settings(cx))),
@@ -71,6 +76,7 @@ impl Root {
                     button("settings-close", "Close", Kind::Plain, false, theme)
                         .on_click(cx.listener(|this, _, window, cx| this.close_modal(window, cx))),
                 )
+                .when(editable && ready && !rows, |d| d.child(div().flex_1()))
                 .when(editable && ready, |d| {
                     d.child(
                         button("settings-save", if busy { "Saving…" } else { "Save" }, Kind::Primary, busy, theme)
@@ -109,6 +115,10 @@ fn about(tab: Tab) -> &'static str {
              uploads. Rules set elsewhere with more than that are shown and kept as they are."
         }
         Tab::Cors => "Which web origins may call the bucket from a browser, with which methods and headers.",
+        Tab::Versioning => {
+            "Whether each write keeps the version it replaces, so it can be restored from the object's details. Once \
+             on, versioning can only be suspended: the versions kept stay."
+        }
     }
 }
 
@@ -116,13 +126,14 @@ fn about(tab: Tab) -> &'static str {
 fn add_label(tab: Tab) -> &'static str {
     match tab {
         Tab::Tags => "Add tag",
-        Tab::Lifecycle | Tab::Cors => "Add rule",
+        Tab::Lifecycle | Tab::Cors | Tab::Versioning => "Add rule",
     }
 }
 
 /// The open tab's rows or cards.
 fn tab_body(fields: &Fields, editable: bool, theme: &Theme, cx: &mut Context<Root>) -> Div {
     let (count, none) = match fields {
+        Fields::Versioning(_) => (1, ""),
         Fields::Tags(rows) => (rows.len(), "No tags."),
         Fields::Lifecycle(cards) => (cards.len(), "No lifecycle rules."),
         Fields::Cors(cards) => (cards.len(), "No CORS rules."),
@@ -133,6 +144,7 @@ fn tab_body(fields: &Fields, editable: bool, theme: &Theme, cx: &mut Context<Roo
             cards.iter().enumerate().map(|(i, c)| rule_card(i, c, editable, theme, cx)).collect()
         }
         Fields::Cors(cards) => cards.iter().enumerate().map(|(i, c)| cors_card(i, c, editable, theme, cx)).collect(),
+        Fields::Versioning(_) => Vec::new(),
     };
     div()
         .flex()
@@ -140,6 +152,27 @@ fn tab_body(fields: &Fields, editable: bool, theme: &Theme, cx: &mut Context<Roo
         .gap_2()
         .children(items)
         .when(count == 0, |d| d.child(div().text_xs().text_color(theme.muted).child(none)))
+}
+
+/// The versioning tab: what the bucket does now, and the choice to save.
+fn versioning_body(now: Versioning, on: bool, editable: bool, theme: &Theme, cx: &mut Context<Root>) -> Div {
+    let state = match now {
+        Versioning::Off => "This bucket doesn't keep versions.",
+        Versioning::Enabled => "This bucket keeps a version of every object it replaces or deletes.",
+        Versioning::Suspended => "Versioning is suspended: versions kept stay, new writes replace.",
+    };
+    let choice = |chosen: bool, label: &'static str| {
+        let kind = if on == chosen { Kind::Primary } else { Kind::Plain };
+        button(label, label, kind, !editable, theme)
+            .when(editable, |b| b.on_click(cx.listener(move |this, _, _, cx| this.choose_versioning(chosen, cx))))
+    };
+    let (enable, suspend) = (choice(true, "Enabled"), choice(false, "Suspended"));
+    div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .child(div().debug_selector(|| "versioning state".to_owned()).child(state))
+        .child(div().flex().gap_1().child(enable).child(suspend))
 }
 
 /// `field` as typed into when `editable`, else its text.

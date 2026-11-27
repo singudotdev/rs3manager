@@ -4,7 +4,7 @@
 //! console tools (`MinIO`'s, the AWS console) create for an empty folder, which rs3manager creates too.
 
 use super::error::map;
-use super::names::{check_bucket_name, check_key, copy_source};
+use super::names::{check_bucket_name, check_key, copy_source_version};
 use super::{Bucket, DeleteReport, Headers, ObjectEntry, ObjectInfo, Page, Pending, Preview, S3Error, Session};
 use super::{size, time};
 use aws_sdk_s3::Client;
@@ -177,7 +177,7 @@ impl Session {
         let (bucket, key) = (bucket.to_owned(), key.to_owned());
         self.spawn(|client| async move {
             headers.check()?;
-            copy(&client, &bucket, &key, &key, Some(&headers)).await?;
+            copy(&client, &bucket, (&key, None), &key, Some(&headers)).await?;
             head(&client, &bucket, &key).await
         })
     }
@@ -208,7 +208,7 @@ impl Session {
                 Err(S3Error::NotFound(_)) => {}
                 Err(e) => return Err(e),
             }
-            copy(&client, &bucket, &from, &to, None).await?;
+            copy(&client, &bucket, (&from, None), &to, None).await?;
             client.delete_object().bucket(&bucket).key(&from).send().await.map_err(map)?;
             Ok(())
         })
@@ -245,7 +245,7 @@ impl Session {
                 for key in page.contents().iter().filter_map(|o| o.key()) {
                     let target = format!("{to}{}", &key[from.len()..]);
                     check_key(&target)?;
-                    copy(&client, &bucket, key, &target, None).await?;
+                    copy(&client, &bucket, (key, None), &target, None).await?;
                     client.delete_object().bucket(&bucket).key(key).send().await.map_err(map)?;
                     moved += 1;
                 }
@@ -283,7 +283,18 @@ impl Session {
 
 /// Object `key`'s details.
 pub(crate) async fn head(client: &Client, bucket: &str, key: &str) -> Result<ObjectInfo, S3Error> {
-    let out = client.head_object().bucket(bucket).key(key).send().await.map_err(map)?;
+    head_version(client, bucket, key, None).await
+}
+
+/// Object `key`'s details, of `version` when given, else of the current version.
+pub(crate) async fn head_version(
+    client: &Client,
+    bucket: &str,
+    key: &str,
+    version: Option<&str>,
+) -> Result<ObjectInfo, S3Error> {
+    let request = client.head_object().bucket(bucket).key(key).set_version_id(version.map(str::to_owned));
+    let out = request.send().await.map_err(map)?;
     Ok(ObjectInfo {
         key: key.to_owned(),
         size: size(out.content_length()),
@@ -312,12 +323,20 @@ fn content_encoding(stored: &str) -> Option<String> {
     (!real.is_empty()).then(|| real.join(", "))
 }
 
-/// Copies object `from` to `to` within `bucket`: with `headers`, replacing its headers and metadata, else keeping
-/// them. Objects over [`COPY_LIMIT`] are copied in parts, server side.
-async fn copy(client: &Client, bucket: &str, from: &str, to: &str, headers: Option<&Headers>) -> Result<(), S3Error> {
-    let source = head(client, bucket, from).await?;
+/// Copies object `from` (a key, and a version of it when given, else the current one) to `to` within `bucket`: with
+/// `headers`, replacing its headers and metadata, else keeping them. Objects over [`COPY_LIMIT`] are copied in
+/// parts, server side.
+pub(crate) async fn copy(
+    client: &Client,
+    bucket: &str,
+    from: (&str, Option<&str>),
+    to: &str,
+    headers: Option<&Headers>,
+) -> Result<(), S3Error> {
+    let source = head_version(client, bucket, from.0, from.1).await?;
+    let from = copy_source_version(bucket, from.0, from.1);
     if source.size <= COPY_LIMIT {
-        let request = client.copy_object().bucket(bucket).key(to).copy_source(copy_source(bucket, from));
+        let request = client.copy_object().bucket(bucket).key(to).copy_source(&from);
         let request = match headers {
             Some(h) => with_headers!(request.metadata_directive(MetadataDirective::Replace), h),
             None => request.metadata_directive(MetadataDirective::Copy),
@@ -329,14 +348,15 @@ async fn copy(client: &Client, bucket: &str, from: &str, to: &str, headers: Opti
     let created =
         with_headers!(client.create_multipart_upload().bucket(bucket).key(to), headers).send().await.map_err(map)?;
     let upload_id = created.upload_id().unwrap_or_default().to_owned();
-    let result = copy_parts(client, bucket, from, to, &upload_id, source.size).await;
+    let result = copy_parts(client, bucket, &from, to, &upload_id, source.size).await;
     if result.is_err() {
         let _ = client.abort_multipart_upload().bucket(bucket).key(to).upload_id(&upload_id).send().await;
     }
     result
 }
 
-/// The parts of a multipart copy of `from` (`len` bytes) into upload `upload_id` of `to`, then its completion.
+/// The parts of a multipart copy of `from` (an `x-amz-copy-source`, `len` bytes) into upload `upload_id` of `to`,
+/// then its completion.
 async fn copy_parts(
     client: &Client,
     bucket: &str,
@@ -357,7 +377,7 @@ async fn copy_parts(
             .key(to)
             .upload_id(upload_id)
             .part_number(number)
-            .copy_source(copy_source(bucket, from))
+            .copy_source(from)
             .copy_source_range(format!("bytes={start}-{end}"))
             .send()
             .await

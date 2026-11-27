@@ -77,6 +77,14 @@ pub(crate) fn copy_source(bucket: &str, key: &str) -> String {
     url_path(&format!("{bucket}/{key}"))
 }
 
+/// The `x-amz-copy-source` value for `version` of `key` in `bucket`, or its current version when `None`.
+pub(crate) fn copy_source_version(bucket: &str, key: &str, version: Option<&str>) -> String {
+    match version {
+        Some(v) => format!("{}?versionId={}", copy_source(bucket, key), url_path(v).replace('/', "%2F")),
+        None => copy_source(bucket, key),
+    }
+}
+
 /// The Content-Type for a file named `name`, by its extension: what a browser or app fetching the object needs to
 /// show it. Unknown ones are `application/octet-stream`.
 pub fn content_type_for(name: &str) -> &'static str {
@@ -149,6 +157,8 @@ mod tests {
     #[test]
     fn copy_sources_are_url_encoded_keeping_slashes() {
         assert_eq!(copy_source("b", "dir/a b+c%ñ.txt"), "b/dir/a%20b%2Bc%25%C3%B1.txt");
+        assert_eq!(copy_source_version("b", "a b", None), "b/a%20b");
+        assert_eq!(copy_source_version("b", "a b", Some("3/x+y")), "b/a%20b?versionId=3%2Fx%2By");
     }
 
     #[test]

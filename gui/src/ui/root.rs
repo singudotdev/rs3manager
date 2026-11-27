@@ -81,6 +81,15 @@ pub enum Confirmed {
     },
     /// Removes profile `name` from the AWS CLI's files.
     RemoveProfile(String),
+    /// Deletes version `id` of object `key` in `bucket`, for good.
+    DeleteVersion {
+        /// The bucket.
+        bucket: String,
+        /// The object.
+        key: String,
+        /// The version.
+        id: String,
+    },
 }
 
 /// What submitting a name does.
