@@ -5577,7 +5577,7 @@ dependencies = [
 
 [[package]]
 name = "rs3manager-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5593,7 +5593,7 @@ dependencies = [
 
 [[package]]
 name = "rs3manager-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aws-config",
  "aws-runtime",
