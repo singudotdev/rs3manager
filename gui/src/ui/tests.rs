@@ -574,3 +574,71 @@ fn a_buckets_tags_lifecycle_and_cors_are_edited_in_its_settings(cx: &mut TestApp
     cx.simulate_keystrokes("escape");
     assert!(view.read_with(cx, |r, _| r.modal.is_none()));
 }
+
+#[gpui::test]
+#[ignore = "needs a radosgw: dev/test-rgw.sh"]
+fn versioning_is_turned_on_and_versions_are_restored_and_deleted(cx: &mut TestAppContext) {
+    use super::versions::VersionsState;
+    use crate::state::settings::Tab;
+    use rs3manager_core::s3::Versioning;
+    let dir = tempfile::tempdir().unwrap();
+    let files = files(dir.path());
+    let test_bucket = bucket(&files, dir.path());
+    let (name, core) = (test_bucket.name.clone(), test_bucket.session.clone());
+    let (view, cx) = window(cx, files);
+    let versions = |r: &Root| match r.details.as_ref().map(|d| &d.versions) {
+        Some(VersionsState::Ready(v)) => Some(v.clone()),
+        _ => None,
+    };
+    let preview = |r: &Root| match r.details.as_ref().map(|d| &d.preview) {
+        Some(super::browse::PreviewState::Text(t, _)) => Some(t.to_string()),
+        _ => None,
+    };
+
+    click(cx, &format!("bucket {name}"));
+    until(cx, &view, "the bucket", |r| r.browser.bucket() == Some(name.as_str()) && !r.browser.loading());
+    // Before versioning, the details show no versions.
+    click(cx, "row notes.txt");
+    until(cx, &view, "the details", |r| preview(r).is_some());
+    assert!(cx.debug_bounds("version 0").is_none(), "an unversioned bucket shows no versions");
+
+    // Settings: suspending what was never on is refused; enabling is saved.
+    click(cx, "button Settings");
+    until(cx, &view, "the tags", |r| settings_ready(r, Tab::Tags));
+    click(cx, "button Versioning");
+    until(cx, &view, "the versioning", |r| settings_ready(r, Tab::Versioning));
+    click(cx, "button Save");
+    assert!(view.read_with(cx, |r, _| settings(r).error.clone()).is_some_and(|e| e.contains("nothing to suspend")));
+    click(cx, "button Enabled");
+    click(cx, "button Save");
+    until(cx, &view, "versioning saved", |r| settings_ready(r, Tab::Versioning) && settings(r).error.is_none());
+    assert_eq!(wait(core.versioning(&name)).unwrap(), Versioning::Enabled);
+    cx.simulate_keystrokes("escape");
+
+    // A new version of notes.txt: the details list both, the current one first.
+    let path = dir.path().join("v2");
+    std::fs::write(&path, "notes, second take").unwrap();
+    wait(core.upload(&name, "notes.txt", &path, Headers::default(), Progress::new())).unwrap();
+    click(cx, "row docs/");
+    until(cx, &view, "the folder", |r| r.browser.prefix() == "docs/" && !r.browser.loading());
+    cx.simulate_keystrokes("backspace");
+    until(cx, &view, "the top", |r| r.browser.prefix().is_empty() && !r.browser.loading());
+    click(cx, "row notes.txt");
+    until(cx, &view, "both versions", |r| versions(r).is_some_and(|v| v.len() == 2));
+    assert_eq!(view.read_with(cx, |r, _| preview(r)), Some("notes, second take".to_owned()));
+
+    // Restoring the first makes it current again, as a third version.
+    click(cx, "restore version 1");
+    until(cx, &view, "the restored version", |r| {
+        versions(r).is_some_and(|v| v.len() == 3) && preview(r).as_deref() == Some("notes")
+    });
+
+    // Deleting the current version, asked first, makes the second take current again.
+    click(cx, "delete version 0");
+    assert!(view.read_with(cx, |r, _| matches!(r.modal, Some(Modal::Confirm { .. }))));
+    cx.simulate_keystrokes("enter");
+    until(cx, &view, "the version deleted", |r| {
+        versions(r).is_some_and(|v| v.len() == 2) && preview(r).as_deref() == Some("notes, second take")
+    });
+    assert_eq!(wait(core.versions(&name, "notes.txt")).unwrap().len(), 2);
+}

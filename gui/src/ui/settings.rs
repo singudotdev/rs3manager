@@ -7,7 +7,7 @@ use super::root::{Modal, Root};
 use crate::state::settings::{self as form, CorsText, LifecycleText, Tab};
 use gpui::{AppContext as _, Context, Entity, SharedString, Window};
 use rs3manager_core::s3::settings::{CORS_METHODS, check_cors, check_lifecycle, check_tags};
-use rs3manager_core::s3::{BucketTag, CorsRule, LifecycleRule, Pending, S3Error, Session};
+use rs3manager_core::s3::{BucketTag, CorsRule, LifecycleRule, Pending, S3Error, Session, Versioning};
 
 /// A one-line field of the dialog.
 pub type Field = Entity<TextInput>;
@@ -63,12 +63,15 @@ pub enum Loaded {
     Lifecycle(Vec<LifecycleRule>),
     /// The CORS rules.
     Cors(Vec<CorsRule>),
+    /// Whether the bucket keeps versions.
+    Versioning(Versioning),
 }
 
 impl Loaded {
-    /// Whether there's nothing to remove.
+    /// Whether there's nothing to remove: versioning can't be removed, only suspended.
     pub fn is_empty(&self) -> bool {
         match self {
+            Self::Versioning(_) => true,
             Self::Tags(t) => t.is_empty(),
             Self::Lifecycle(r) => r.is_empty(),
             Self::Cors(r) => r.is_empty(),
@@ -84,6 +87,8 @@ pub enum Fields {
     Lifecycle(Vec<RuleFields>),
     /// A card per CORS rule.
     Cors(Vec<CorsFields>),
+    /// Whether versioning is to be on (else suspended).
+    Versioning(bool),
 }
 
 /// What the open tab shows.
@@ -166,6 +171,7 @@ fn fields_of(loaded: &Loaded, cx: &mut Context<Root>) -> Fields {
         Loaded::Tags(tags) => Fields::Tags(tags.iter().map(|t| tag_fields(t, cx)).collect()),
         Loaded::Lifecycle(rules) => Fields::Lifecycle(rules.iter().map(|r| rule_fields(r, cx)).collect()),
         Loaded::Cors(rules) => Fields::Cors(rules.iter().map(|r| cors_fields(CorsText::of(r), cx)).collect()),
+        Loaded::Versioning(v) => Fields::Versioning(*v == Versioning::Enabled),
     }
 }
 
@@ -177,6 +183,8 @@ enum Edited {
     Lifecycle(Vec<LifecycleRule>),
     /// The CORS rules.
     Cors(Vec<CorsRule>),
+    /// Versioning on, or suspended.
+    Versioning(bool),
 }
 
 /// What `fields` hold, checked as the core would before sending.
@@ -227,6 +235,7 @@ fn edited(fields: &Fields, cx: &Context<Root>) -> Result<Edited, String> {
             checked(check_cors(&rules))?;
             Ok(Edited::Cors(rules))
         }
+        Fields::Versioning(on) => Ok(Edited::Versioning(*on)),
     }
 }
 
@@ -287,6 +296,7 @@ impl Root {
             Tab::Tags => self.fetch_settings(|s| s.bucket_tags(&bucket), Loaded::Tags, cx),
             Tab::Lifecycle => self.fetch_settings(|s| s.lifecycle(&bucket), Loaded::Lifecycle, cx),
             Tab::Cors => self.fetch_settings(|s| s.cors(&bucket), Loaded::Cors, cx),
+            Tab::Versioning => self.fetch_settings(|s| s.versioning(&bucket), Loaded::Versioning, cx),
         }
         cx.notify();
     }
@@ -331,12 +341,13 @@ impl Root {
         let Some(TabState::Ready { fields, .. }) = self.settings().map(|d| &d.state) else { return };
         let taken: Vec<String> = match fields {
             Fields::Lifecycle(cards) => cards.iter().map(|c| text(&c.id, cx)).collect(),
-            Fields::Tags(_) | Fields::Cors(_) => Vec::new(),
+            Fields::Tags(_) | Fields::Cors(_) | Fields::Versioning(_) => Vec::new(),
         };
         let kind = match fields {
             Fields::Tags(_) => Tab::Tags,
             Fields::Lifecycle(_) => Tab::Lifecycle,
             Fields::Cors(_) => Tab::Cors,
+            Fields::Versioning(_) => return,
         };
         // Built before borrowing the dialog again: fields need `cx`.
         let row = match kind {
@@ -349,6 +360,7 @@ impl Root {
                 )))
             }
             Tab::Cors => Row::Cors(cors_fields(CorsText::new_rule(), cx)),
+            Tab::Versioning => return,
         };
         let Some(TabState::Ready { fields, .. }) = self.settings().map(|d| &mut d.state) else { return };
         match (fields, row) {
@@ -367,12 +379,14 @@ impl Root {
             Fields::Tags(rows) => rows.len(),
             Fields::Lifecycle(cards) => cards.len(),
             Fields::Cors(cards) => cards.len(),
+            Fields::Versioning(_) => 0,
         };
         if index < len {
             match fields {
                 Fields::Tags(rows) => drop(rows.remove(index)),
                 Fields::Lifecycle(cards) => drop(cards.remove(index)),
                 Fields::Cors(cards) => drop(cards.remove(index)),
+                Fields::Versioning(_) => {}
             }
         }
         cx.notify();
@@ -398,13 +412,27 @@ impl Root {
         }
     }
 
+    /// Chooses whether versioning is to be on, to save.
+    pub fn choose_versioning(&mut self, on: bool, cx: &mut Context<Self>) {
+        if let Some(TabState::Ready { fields: Fields::Versioning(chosen), .. }) = self.settings().map(|d| &mut d.state)
+        {
+            *chosen = on;
+            cx.notify();
+        }
+    }
+
     /// Saves the tab's fields, once checked; a refusal is shown in the tab.
     pub fn save_settings(&mut self, cx: &mut Context<Self>) {
         let Some(dialog) = self.settings() else { return };
         if dialog.saving {
             return;
         }
-        let TabState::Ready { fields, .. } = &dialog.state else { return };
+        let TabState::Ready { fields, loaded } = &dialog.state else { return };
+        if matches!((fields, loaded), (Fields::Versioning(false), Loaded::Versioning(Versioning::Off))) {
+            dialog.error = Some("Versioning is off: there's nothing to suspend.".into());
+            cx.notify();
+            return;
+        }
         match edited(fields, cx) {
             Ok(edited) => self.write_settings(edited, false, cx),
             Err(why) => {
@@ -439,6 +467,7 @@ impl Root {
             Tab::Tags => Edited::Tags(Vec::new()),
             Tab::Lifecycle => Edited::Lifecycle(Vec::new()),
             Tab::Cors => Edited::Cors(Vec::new()),
+            Tab::Versioning => return,
         };
         self.write_settings(edited, true, cx);
     }
@@ -455,6 +484,7 @@ impl Root {
             Edited::Tags(tags) => s.set_bucket_tags(&b, tags),
             Edited::Lifecycle(rules) => s.set_lifecycle(&b, rules),
             Edited::Cors(rules) => s.set_cors(&b, rules),
+            Edited::Versioning(on) => s.set_versioning(&b, on),
         };
         self.run(cx, start, move |this, result, cx| {
             let Some(dialog) = this.settings().filter(|d| d.generation == generation) else { return };

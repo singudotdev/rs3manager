@@ -389,3 +389,54 @@ fn a_buckets_tags_lifecycle_and_cors_are_read_written_and_removed() {
     assert_eq!(wait(session.cors(&bucket)).unwrap(), []);
     wait(session.delete_bucket(&bucket, true)).unwrap();
 }
+
+#[test]
+#[ignore = "needs a radosgw: dev/test-rgw.sh"]
+fn an_objects_versions_are_listed_restored_and_deleted() {
+    use rs3manager_core::s3::Versioning;
+    let (_engine, session, bucket, dir) = setup("versions");
+    let read = |key: &str| wait(session.preview(&bucket, key, 64)).unwrap().bytes;
+    let ids = |key: &str| wait(session.versions(&bucket, key)).unwrap();
+
+    assert_eq!(wait(session.versioning(&bucket)).unwrap(), Versioning::Off);
+    put(&session, &bucket, dir.path(), "a.txt", b"zero", Headers::default());
+    let before = ids("a.txt");
+    assert_eq!((before.len(), before[0].id.as_str(), before[0].latest), (1, "null", true), "{before:?}");
+
+    wait(session.set_versioning(&bucket, true)).unwrap();
+    assert_eq!(wait(session.versioning(&bucket)).unwrap(), Versioning::Enabled);
+    let headers = Headers { content_type: Some("text/plain".into()), ..Headers::default() };
+    put(&session, &bucket, dir.path(), "a.txt", b"one", headers.clone());
+    put(&session, &bucket, dir.path(), "a.txt", b"two!", headers);
+    put(&session, &bucket, dir.path(), "a.txt.bak", b"another key", Headers::default());
+    let versions = ids("a.txt");
+    assert_eq!(versions.len(), 3, "a.txt.bak's aren't a.txt's: {versions:?}");
+    assert!(versions[0].latest && versions[0].size == 4 && versions[2].id == "null", "{versions:?}");
+    assert!(versions.iter().skip(1).all(|v| !v.latest && !v.delete_marker));
+
+    // Restoring the first version makes a new current one holding it; the others stay.
+    let info = wait(session.restore_version(&bucket, "a.txt", "null")).unwrap();
+    assert_eq!((info.size, read("a.txt")), (4, b"zero".to_vec()));
+    let after = ids("a.txt");
+    assert_eq!(after.len(), 4);
+    assert_eq!(after[0].id, info.version_id.clone().unwrap());
+
+    // Deleting a version is for good; deleting the current one makes the one before current.
+    let one = versions[1].id.clone();
+    wait(session.delete_version(&bucket, "a.txt", &one)).unwrap();
+    assert!(ids("a.txt").iter().all(|v| v.id != one));
+    wait(session.delete_version(&bucket, "a.txt", &after[0].id)).unwrap();
+    assert_eq!(read("a.txt"), b"two!");
+
+    // A delete leaves a marker on top; deleting the marker brings the object back.
+    assert_eq!(wait(session.delete(&bucket, vec!["a.txt".into()])).unwrap().deleted, 1);
+    let marked = ids("a.txt");
+    assert!(marked[0].latest && marked[0].delete_marker, "{marked:?}");
+    assert!(matches!(wait(session.head(&bucket, "a.txt")), Err(S3Error::NotFound(_))));
+    wait(session.delete_version(&bucket, "a.txt", &marked[0].id)).unwrap();
+    assert_eq!(read("a.txt"), b"two!");
+
+    wait(session.set_versioning(&bucket, false)).unwrap();
+    assert_eq!(wait(session.versioning(&bucket)).unwrap(), Versioning::Suspended);
+    wait(session.delete_bucket(&bucket, true)).unwrap();
+}

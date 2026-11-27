@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - A download cancelled or cut by the network keeps what it wrote, and the next one asks the gateway only for the rest.
 - A bucket's Settings: its tags, lifecycle rules (expiring objects, noncurrent versions and unfinished uploads) and CORS rules, read, edited and removed in one dialog. Tabs follow the profile's policies; lifecycle rules set elsewhere with more than that are kept as they are.
+- An object's versions, in a bucket that keeps them, listed in its details: restore one (it becomes the current version) or delete one for good. Versioning is turned on or suspended in the bucket's Settings.
 
 ### Changed
 

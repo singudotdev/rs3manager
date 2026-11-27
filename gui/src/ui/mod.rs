@@ -7,6 +7,7 @@
 //! - `transfer`: uploads (also dropped files) and downloads, queued and running on the session.
 //! - `profiles`: the AWS CLI profiles dialog.
 //! - `rights`: what the profile's policies allow, and so what's shown.
+//! - `versions`: an object's versions: listing, restoring and deleting one.
 //! - `share`: download links to an object, with an expiry.
 //! - `settings`: a bucket's tags, lifecycle rules and CORS rules.
 //! - `view`: drawing each area.
@@ -24,6 +25,7 @@ mod settings;
 mod share;
 pub mod theme;
 mod transfer;
+mod versions;
 mod view;
 mod widgets;
 

@@ -4,6 +4,7 @@
 use super::input::TextInput;
 use super::rights;
 use super::root::{Confirmed, Modal, Prompted, Root};
+use super::versions::VersionsState;
 use crate::state::browser::Row;
 use crate::state::format::{base_name, key_in, name_in, parent};
 use gpui::{AppContext as _, ClipboardItem, Context, Entity, Image, ImageFormat, SharedString, Window};
@@ -42,6 +43,22 @@ pub struct Details {
     pub form: Option<HeadersForm>,
     /// Whether the headers are being saved.
     pub saving: bool,
+    /// Its versions.
+    pub versions: VersionsState,
+}
+
+impl Details {
+    /// The details of object `key`, nothing read yet.
+    pub fn new(key: String) -> Self {
+        Self {
+            key,
+            info: None,
+            preview: PreviewState::Loading,
+            form: None,
+            saving: false,
+            versions: VersionsState::Hidden,
+        }
+    }
 }
 
 /// An object's headers as fields.
@@ -287,18 +304,12 @@ impl Root {
         if self.details.as_ref().is_some_and(|d| d.key == object.key) {
             return;
         }
-        self.details = Some(Details {
-            key: object.key.clone(),
-            info: None,
-            preview: PreviewState::Loading,
-            form: None,
-            saving: false,
-        });
+        self.details = Some(Details::new(object.key.clone()));
         self.load_details(object.key, cx);
     }
 
-    /// Fetches `key`'s details, then its preview.
-    fn load_details(&mut self, key: String, cx: &mut Context<Self>) {
+    /// Fetches `key`'s details, then its preview, and its versions.
+    pub(super) fn load_details(&mut self, key: String, cx: &mut Context<Self>) {
         let Some(bucket) = self.browser.bucket().map(str::to_owned) else { return };
         // HeadObject needs the same right as reading it: known denied, it isn't asked.
         if !self.may_on_key(rights::READ, &key) {
@@ -307,6 +318,7 @@ impl Root {
             }
             return;
         }
+        self.load_versions(&key, cx);
         let for_key = key.clone();
         let b = bucket.clone();
         self.run(
@@ -511,6 +523,7 @@ impl Root {
             Confirmed::DeleteRows { bucket, rows } => self.delete_rows(&bucket, &rows, cx),
             Confirmed::DeleteBucket { name, force } => self.delete_bucket(name, force, window, cx),
             Confirmed::RemoveProfile(name) => self.remove_profile(&name, window, cx),
+            Confirmed::DeleteVersion { bucket, key, id } => self.delete_version(bucket, key, id, cx),
         }
     }
 
