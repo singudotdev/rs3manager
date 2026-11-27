@@ -289,4 +289,34 @@ mod tests {
         b.loaded(g, true, page(&[], &["b", "c"], None));
         assert_eq!(b.selection().iter().map(|r| r.key()).collect::<Vec<_>>(), ["b"]);
     }
+
+    #[test]
+    fn the_folder_open_and_its_listing_state_are_known() {
+        let mut b = Browser::default();
+        assert_eq!((b.bucket(), b.prefix(), b.loading()), (None, "", false));
+        let g = b.open(Some("bk".into()), "a/".into());
+        assert_eq!((b.bucket(), b.prefix(), b.loading()), (Some("bk"), "a/", true));
+        b.failed(g + 1);
+        assert!(b.loading(), "a stale failure leaves the current listing");
+        b.failed(g);
+        assert!(!b.loading());
+    }
+
+    #[test]
+    fn rows_are_found_by_place_and_a_range_with_ctrl_adds_to_the_selection() {
+        let mut b = Browser::default();
+        let g = b.open(Some("bk".into()), String::new());
+        b.loaded(g, true, page(&[], &["a", "b", "c", "d"], None));
+        assert_eq!(b.row(1).map(Row::key), Some("b"));
+        assert!(b.row(4).is_none());
+        b.click("d", false, false);
+        b.click("a", true, false);
+        b.click("b", true, true);
+        assert_eq!(b.selection().iter().map(|r| r.key()).collect::<Vec<_>>(), ["a", "b", "d"]);
+        assert!(b.is_selected("d") && !b.is_selected("c"));
+        b.clear_selection();
+        assert_eq!(b.selection(), Vec::<&Row>::new());
+        b.click("c", false, true);
+        assert_eq!(b.selection().iter().map(|r| r.key()).collect::<Vec<_>>(), ["c"], "no anchor left to range from");
+    }
 }

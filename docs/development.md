@@ -36,10 +36,27 @@ Six layers, from the fastest:
 - **Smoke test of the release app** (`e2e/smoke-app.sh`, CI job `app smoke` under `xvfb`): the app says so and exits
   when there is no display, starts and stays up against an unreachable gateway, idles under 3% CPU, and draws a window
   that isn't black (screenshot in the job's artifact).
-- **Mutation testing** of the pure modules (`cargo mutants`, in a scratch worktree): a mutant no test catches is a
-  missing test.
+- **Mutation testing** of the pure modules (`cargo mutants`, CI job `mutants` on each pull request's diff): a mutant
+  no test catches is a missing test. See below.
 
 Scripts are checked with `shellcheck -x` in CI.
+
+### Mutation testing
+
+[cargo-mutants](https://mutants.rs/) alters the code (`==` for `!=`, a body for `Ok(())`…) and runs the tests again:
+a change no test notices is behavior nothing guards. `.cargo/mutants.toml` says what it alters (the modules unit tests
+judge without a gateway: the core's names, policies, errors, profiles and checks, and the app's state) and lists the
+mutants no test can tell apart, each with why; anything else missed is a test to write. A mutant whose tests hang (an
+endless loop) is cut at the [timeout](https://mutants.rs/timeouts.html) and counts as caught.
+
+CI runs it on the lines a pull request changes (`.github/workflows/mutants.yml`). Locally, from a clean worktree on
+disk, with its own target and temporary folder: each mutant's copy builds there, and `/tmp` is often a RAM-backed
+tmpfs that a full build of the app fills.
+
+```sh
+S=~/.cache/rs3manager-mutants; mkdir -p $S/tmp && git worktree add --detach $S/tree HEAD && cd $S/tree
+env -u CARGO_TARGET_DIR TMPDIR=$S/tmp CARGO_BUILD_JOBS=6 cargo mutants --workspace -j 2 -o $S   # or --in-diff FILE
+```
 
 ## Branches
 

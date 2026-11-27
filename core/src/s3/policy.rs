@@ -281,4 +281,12 @@ mod tests {
         assert!(glob("*", "", false) && glob("S3:Get*", "s3:getobject", true));
         assert!(!glob("arn:aws:s3:::b", "arn:aws:s3:::b/x", false));
     }
+
+    #[test]
+    fn escapes_cut_short_at_the_end_stay_as_written() {
+        assert_eq!(percent_decode("a%2Fb%41"), "a/bA");
+        assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("a%4"), "a%4");
+        assert_eq!(percent_decode("%zz"), "%zz");
+    }
 }

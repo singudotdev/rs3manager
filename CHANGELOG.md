@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-27
+
+No change in what the app does.
+
+### Added
+
+- Mutation testing of the modules unit tests judge without a gateway (names, policies, errors, profiles, bucket settings, the window's state), with the tests it asked for; each pull request's change is mutation tested in CI (`cargo mutants --in-diff`).
+
 ## [0.1.0] - 2026-11-27
 
 The first release: a desktop app for developers to work with the buckets and objects of their Ceph radosgw account, in
@@ -22,5 +30,6 @@ place of the MinIO console.
 - A Linux x86_64 package with a launcher entry and icon, and its SHA-256, on each release.
 - `dev/rgw.sh` for the Ceph side: accounts with guardrails on their root users (no bucket policies or ACLs), admin users, and project accounts with read-write and read-only groups.
 
-[Unreleased]: https://github.com/singudotdev/rs3manager/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/singudotdev/rs3manager/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/singudotdev/rs3manager/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/singudotdev/rs3manager/releases/tag/v0.1.0

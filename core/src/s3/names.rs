@@ -149,6 +149,7 @@ mod tests {
         assert!(check_key("").is_err());
         assert!(check_key("a\nb").is_err());
         assert!(check_key(&"k".repeat(1025)).is_err());
+        assert!(check_key(&"k".repeat(1024)).is_ok(), "1024 bytes is the limit, not past it");
         assert!(check_metadata("owner-team", "Platform 2").is_ok());
         assert!(check_metadata("bad name", "x").is_err());
         assert!(check_metadata("x", "café").is_err());
@@ -166,5 +167,46 @@ mod tests {
         assert_eq!(content_type_for("a/b/Photo.JPG"), "image/jpeg");
         assert_eq!(content_type_for("data.json"), "application/json");
         assert_eq!(content_type_for("README"), "application/octet-stream");
+        let table = [
+            ("htm", "text/html; charset=utf-8"),
+            ("html", "text/html; charset=utf-8"),
+            ("css", "text/css; charset=utf-8"),
+            ("mjs", "text/javascript; charset=utf-8"),
+            ("map", "application/json"),
+            ("log", "text/plain; charset=utf-8"),
+            ("toml", "text/plain; charset=utf-8"),
+            ("csv", "text/csv; charset=utf-8"),
+            ("md", "text/markdown; charset=utf-8"),
+            ("yml", "application/yaml"),
+            ("yaml", "application/yaml"),
+            ("xml", "application/xml"),
+            ("svg", "image/svg+xml"),
+            ("png", "image/png"),
+            ("jpeg", "image/jpeg"),
+            ("gif", "image/gif"),
+            ("webp", "image/webp"),
+            ("avif", "image/avif"),
+            ("ico", "image/x-icon"),
+            ("bmp", "image/bmp"),
+            ("tiff", "image/tiff"),
+            ("pdf", "application/pdf"),
+            ("zip", "application/zip"),
+            ("tgz", "application/gzip"),
+            ("tar", "application/x-tar"),
+            ("zst", "application/zstd"),
+            ("wasm", "application/wasm"),
+            ("woff", "font/woff"),
+            ("woff2", "font/woff2"),
+            ("ttf", "font/ttf"),
+            ("otf", "font/otf"),
+            ("mp4", "video/mp4"),
+            ("webm", "video/webm"),
+            ("mp3", "audio/mpeg"),
+            ("ogg", "audio/ogg"),
+            ("wav", "audio/wav"),
+        ];
+        for (ext, content_type) in table {
+            assert_eq!(content_type_for(&format!("f.{ext}")), content_type, "{ext}");
+        }
     }
 }

@@ -5,6 +5,7 @@
 mod ini;
 
 use ini::Document;
+use std::ffi::OsString;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -165,8 +166,13 @@ pub struct Files {
 impl Files {
     /// The files the AWS CLI uses in this environment.
     pub fn from_env() -> Result<Self, ProfileError> {
-        let var = |name| std::env::var_os(name).filter(|v| !v.is_empty()).map(PathBuf::from);
-        let home = || std::env::home_dir().map(|h| h.join(".aws")).ok_or(ProfileError::NoHome);
+        Self::from_vars(|name| std::env::var_os(name), std::env::home_dir().as_deref())
+    }
+
+    /// [`Files::from_env`] with the variables `vars` gives, as `std::env::var_os` would, and `home`.
+    fn from_vars(vars: impl Fn(&str) -> Option<OsString>, home: Option<&Path>) -> Result<Self, ProfileError> {
+        let var = |name| vars(name).filter(|v| !v.is_empty()).map(PathBuf::from);
+        let home = || home.map(|h| h.join(".aws")).ok_or(ProfileError::NoHome);
         Ok(Self {
             config: match var("AWS_CONFIG_FILE") {
                 Some(path) => path,
@@ -250,7 +256,12 @@ impl Files {
 
 /// The profile the AWS CLI would use without `--profile`: `AWS_PROFILE`, else `default`.
 pub fn selected_by_env() -> String {
-    std::env::var("AWS_PROFILE").ok().filter(|p| !p.is_empty()).unwrap_or_else(|| "default".to_owned())
+    selected_by(std::env::var("AWS_PROFILE").ok())
+}
+
+/// [`selected_by_env`] with `AWS_PROFILE` as `var`.
+fn selected_by(var: Option<String>) -> String {
+    var.filter(|p| !p.is_empty()).unwrap_or_else(|| "default".to_owned())
 }
 
 /// The config file's header for profile `name`: `default` stands alone, every other one is `profile NAME`.
@@ -460,5 +471,44 @@ mod tests {
         ];
         assert!(bad.iter().all(Result::is_err), "{bad:?}");
         assert!(ProfileEdit::new("team-a.dev@x", "https://s3.example.com:8443", "eu-1", "AK", "s/+=").is_ok());
+    }
+
+    #[test]
+    fn the_files_and_profile_come_from_the_environment_or_home() {
+        let vars = |set: &'static [(&'static str, &'static str)]| {
+            move |name: &str| set.iter().find(|(n, _)| *n == name).map(|(_, v)| OsString::from(v))
+        };
+        let home = Some(Path::new("/home/ana"));
+        let files =
+            Files::from_vars(vars(&[("AWS_CONFIG_FILE", "/etc/aws"), ("AWS_SHARED_CREDENTIALS_FILE", "")]), home)
+                .unwrap();
+        assert_eq!(files.config, Path::new("/etc/aws"));
+        assert_eq!(files.credentials, Path::new("/home/ana/.aws/credentials"), "an empty variable is unset");
+        assert!(matches!(Files::from_vars(vars(&[]), None), Err(ProfileError::NoHome)));
+        assert_eq!(selected_by(Some("dev".to_owned())), "dev");
+        assert_eq!(selected_by(Some(String::new())), "default");
+        assert_eq!(selected_by(None), "default");
+    }
+
+    #[test]
+    fn an_edit_keeps_its_checked_name_and_an_unreadable_file_is_an_error() {
+        assert_eq!(edit("dev", "AK", "SK").name(), "dev");
+        let dir = tempfile::tempdir().unwrap();
+        let files = Files::in_dir(dir.path());
+        std::fs::create_dir(&files.config).unwrap();
+        assert!(files.load().is_err(), "a folder where the config file goes isn't an empty file");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_rewrite_keeps_the_config_files_access_as_it_was() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        for before in [0o600, 0o644] {
+            let (_dir, files) = files("", "");
+            std::fs::set_permissions(&files.config, std::fs::Permissions::from_mode(before)).unwrap();
+            files.save(None, &edit("dev", "AK", "SK")).unwrap();
+            assert_eq!(mode(&files.config), before);
+        }
     }
 }

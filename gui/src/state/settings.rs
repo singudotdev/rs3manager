@@ -270,7 +270,8 @@ mod tests {
         assert_eq!(text.rule(1).unwrap(), rule);
         let wrong = CorsText { max_age: "an hour".to_owned(), ..text };
         assert!(wrong.rule(2).unwrap_err().starts_with("CORS rule 2: max age"));
-        assert_eq!(CorsText::new_rule().rule(1).unwrap().methods, ["GET"]);
+        let new = CorsText::new_rule().rule(1).unwrap();
+        assert_eq!((new.origins, new.methods), (vec!["*".to_owned()], vec!["GET".to_owned()]));
     }
 
     #[test]
@@ -288,6 +289,15 @@ mod tests {
                 "s3:GetBucketVersioning",
                 "s3:PutBucketVersioning",
             ]
+        );
+    }
+
+    #[test]
+    fn every_tab_has_a_title_and_a_noun() {
+        let names: Vec<_> = Tab::ALL.iter().map(|t| (t.label(), t.noun())).collect();
+        assert_eq!(
+            names,
+            [("Tags", "tags"), ("Lifecycle", "lifecycle rules"), ("CORS", "CORS rules"), ("Versioning", "versioning")]
         );
     }
 }

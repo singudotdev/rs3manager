@@ -420,6 +420,10 @@ mod tests {
         let noncurrent = LifecycleRule { noncurrent_days: Some(7), ..LifecycleRule::new("old") };
         assert!(check_lifecycle(&[aborts, noncurrent]).is_ok());
         assert!(invalid(check_lifecycle(&[rule(&"i".repeat(256), Some(1))])).contains("255"));
+        assert!(check_lifecycle(&[rule(&"i".repeat(255), Some(1))]).is_ok(), "255 characters is the limit");
+        let many: Vec<_> = (0..=MAX_LIFECYCLE_RULES).map(|i| rule(&format!("r{i}"), Some(1))).collect();
+        assert!(check_lifecycle(&many[..MAX_LIFECYCLE_RULES]).is_ok());
+        assert!(invalid(check_lifecycle(&many)).contains("at most 1000"));
     }
 
     #[test]
@@ -507,6 +511,9 @@ mod tests {
             invalid(check_cors(&[cors(&["*"], &["GET"]), cors(&["https://*.*.com"], &["GET"])]))
                 .starts_with("CORS rule 2")
         );
+        let many = vec![cors(&["*"], &["GET"]); MAX_CORS_RULES + 1];
+        assert!(check_cors(&many[..MAX_CORS_RULES]).is_ok());
+        assert!(invalid(check_cors(&many)).contains("at most 100"));
     }
 
     #[test]
