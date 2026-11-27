@@ -144,3 +144,58 @@ fn managed(arn: &str) -> Option<String> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn user(doc: &str) -> Access {
+        Access::Policies { user: "ana".to_owned(), groups: Vec::new(), statements: policy::parse(doc).unwrap() }
+    }
+
+    fn creating(resource: &str) -> Access {
+        user(&format!(r#"{{"Statement":[{{"Effect":"Allow","Action":"s3:CreateBucket","Resource":"{resource}"}}]}}"#))
+    }
+
+    #[test]
+    fn only_what_is_surely_denied_is_held_back() {
+        let reader = user(
+            r#"{"Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::b/*"},
+            {"Effect":"Allow","Action":"s3:PutObject","Resource":"arn:aws:s3:::b/*",
+             "Condition":{"StringEquals":{"s3:x-amz-acl":"private"}}}]}"#,
+        );
+        assert!(reader.may("s3:GetObject", "b", Some("k")));
+        assert!(!reader.may("s3:DeleteObject", "b", Some("k")));
+        assert!(!reader.may("s3:GetObject", "other", Some("k")));
+        assert!(reader.may("s3:PutObject", "b", Some("k")), "a condition is the gateway's to judge");
+        assert!(Access::Unknown(String::new()).may("s3:DeleteBucket", "b", None));
+    }
+
+    #[test]
+    fn bucket_names_to_create_come_from_the_allowed_patterns() {
+        assert_eq!(
+            creating("arn:aws:s3:::rs3manager-*-dev").bucket_patterns(),
+            Some(vec!["rs3manager-*-dev".to_owned()])
+        );
+        assert_eq!(creating("*").bucket_patterns(), None, "any name");
+        assert_eq!(creating("arn:aws:s3:::*").bucket_patterns(), None, "any name");
+        let reader = user(r#"{"Statement":[{"Effect":"Allow","Action":"s3:ListBucket","Resource":"*"}]}"#);
+        assert_eq!(reader.bucket_patterns(), Some(vec![]), "none");
+        assert_eq!(Access::Unknown(String::new()).bucket_patterns(), None);
+        assert_eq!(Access::Root { statements: policy::parse(ROOT).unwrap() }.bucket_patterns(), None);
+    }
+
+    #[test]
+    fn every_document_counts_and_one_unreadable_fails_them_all() {
+        let one = r#"{"Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}"#.to_owned();
+        assert_eq!(parse_all(&[one.clone(), ROOT.to_owned()]).unwrap().len(), 2);
+        assert!(parse_all(&[one, "{".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn s3_managed_policies_are_known_by_name() {
+        assert_eq!(managed("arn:aws:iam::aws:policy/AmazonS3FullAccess").as_deref(), Some(S3_FULL));
+        assert_eq!(managed("arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess").as_deref(), Some(S3_READ_ONLY));
+        assert_eq!(managed("arn:aws:iam::aws:policy/IAMFullAccess"), None);
+    }
+}

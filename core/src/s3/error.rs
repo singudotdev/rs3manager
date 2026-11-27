@@ -165,6 +165,19 @@ mod tests {
     }
 
     #[test]
+    fn failures_before_an_answer_are_the_network_or_the_profile() {
+        use aws_sdk_s3::error::ConnectorError;
+        use aws_sdk_s3::operation::get_object::GetObjectError;
+        type Failure = SdkError<GetObjectError, aws_sdk_s3::config::http::HttpResponse>;
+        let refused = ConnectorError::io(Box::new(std::io::Error::other("Connection refused (os error 111)")));
+        assert!(matches!(map(Failure::dispatch_failure(refused)), S3Error::Network(m) if m == "Connection refused"));
+        assert!(
+            matches!(map(Failure::timeout_error(std::io::Error::other("slow"))), S3Error::Network(m) if m.contains("in time"))
+        );
+        assert!(matches!(map(Failure::construction_failure(std::io::Error::other("no region"))), S3Error::Profile(_)));
+    }
+
+    #[test]
     fn codes_map_to_what_they_mean() {
         assert!(matches!(by_code("NoSuchKey", String::new()), S3Error::NotFound(m) if m == "NoSuchKey"));
         assert!(matches!(by_code("SignatureDoesNotMatch", "x".into()), S3Error::BadCredentials(_)));
@@ -172,6 +185,10 @@ mod tests {
         assert!(matches!(by_code("SlowDown", "busy".into()), S3Error::Service { code, .. } if code == "SlowDown"));
         assert!(matches!(by_status(Some(404), String::new()), S3Error::NotFound(_)));
         assert!(matches!(by_status(None, String::new()), S3Error::Network(_)));
+        assert!(matches!(by_code("BucketNotEmpty", String::new()), S3Error::BucketNotEmpty));
+        for code in ["InvalidBucketName", "KeyTooLongError", "InvalidArgument", "MetadataTooLarge"] {
+            assert!(matches!(by_code(code, "why".into()), S3Error::Invalid(m) if m == "why"), "{code}");
+        }
         // radosgw denies with no message: the text says why without repeating the code.
         assert_eq!(by_code("AccessDenied", String::new()).to_string(), "not allowed by this profile's policies");
     }

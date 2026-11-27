@@ -66,6 +66,8 @@ mod tests {
     fn sizes_read_in_binary_units() {
         assert_eq!(size(0), "0 B");
         assert_eq!(size(1023), "1023 B");
+        assert_eq!(size(1024), "1.0 KiB");
+        assert_eq!(size(u64::MAX), "16384.0 PiB", "PiB is the last unit");
         assert_eq!(size(1536), "1.5 KiB");
         assert_eq!(size(5 * 1024 * 1024 * 1024), "5.0 GiB");
     }
@@ -82,5 +84,13 @@ mod tests {
         assert_eq!(breadcrumbs("a/b/"), [("a", "a/"), ("b", "a/b/")]);
         assert_eq!(breadcrumbs(""), []);
         assert_eq!(key_in("a/", " /new/x.txt "), "a/new/x.txt");
+    }
+
+    #[test]
+    fn times_read_to_the_minute() {
+        let shown = when(SystemTime::UNIX_EPOCH + std::time::Duration::from_hours(24 * 365));
+        assert_eq!(shown.len(), "1971-01-01 00:00".len(), "{shown}");
+        assert!(shown.starts_with("1970-12-31 ") || shown.starts_with("1971-01-01 "), "{shown}");
+        assert_eq!(&shown[13..14], ":");
     }
 }

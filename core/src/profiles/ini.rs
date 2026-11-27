@@ -235,6 +235,14 @@ s3 =
     }
 
     #[test]
+    fn comment_lines_are_never_properties_even_with_an_equals_sign() {
+        let doc = Document::parse("[default]\n# region = a\n; output = json\nregion = b ; why\nkey = two words\n");
+        assert_eq!(doc.keys("default"), ["region", "key"]);
+        assert_eq!(doc.get("default", "region"), Some("b"));
+        assert_eq!(doc.get("default", "key"), Some("two words"), "only # and ; start a comment");
+    }
+
+    #[test]
     fn hash_without_whitespace_before_it_is_part_of_a_secret() {
         let doc = Document::parse("[a]\naws_secret_access_key = ab#cd;ef\n");
         assert_eq!(doc.get("a", "aws_secret_access_key"), Some("ab#cd;ef"));
