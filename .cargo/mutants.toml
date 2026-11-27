@@ -1,0 +1,28 @@
+# cargo-mutants (`cargo mutants`, and the CI's `mutants` job on each pull request's diff): what it alters, and the
+# mutants no test can tell apart, each with why. A new exclusion needs the same: a missed mutant is otherwise a test
+# to write. See docs/development.md#mutation-testing.
+
+# What unit tests judge without a gateway: the core's names, policies, errors, profiles and checks, and the app's
+# state (the window's model). The rest calls the gateway or draws, which the integration and window tests cover
+# against a local Ceph (dev/test-rgw.sh), not CI.
+examine_globs = [
+    "core/src/profiles/*.rs",
+    "core/src/s3/names.rs",
+    "core/src/s3/policy.rs",
+    "core/src/s3/error.rs",
+    "core/src/s3/access.rs",
+    "core/src/s3/settings.rs",
+    "core/src/s3/versions.rs",
+    "gui/src/state/*.rs",
+]
+# The core's checks are also the app's: run every package's tests for each mutant.
+test_workspace = true
+exclude_re = [
+    # Requests to the gateway: tested against the local Ceph (core/tests/rgw.rs), which CI doesn't have.
+    'Session::',
+    # A star's backtrack resumes at the star itself rather than after it: the star branch then sets the same point
+    # and moves past it, so `s * 1` matches what `s + 1` does, a step later.
+    'core/src/s3/policy\.rs:.*replace \+ with \* in glob$',
+    # A comment sign at index 0 has nothing before it to end in whitespace, so `i >= 0` refuses it as `i > 0` does.
+    'core/src/profiles/ini\.rs:.*replace > with >= in strip_comment$',
+]
