@@ -198,14 +198,15 @@ mod tests {
     #[test]
     fn totals_count_the_unfinished_and_cancelling_all_stops_them() {
         let mut t = Transfers::default();
-        for k in ["1", "2", "3"] {
+        for k in ["1", "2", "3", "4"] {
             t.add(download(k));
         }
         t.start_ready();
         t.finish(1, Ok(()));
-        assert_eq!(t.totals(), (0, 0, 2), "nothing moved yet, two left");
+        assert_eq!(t.totals(), (0, 0, 3), "nothing moved yet, three left");
         t.cancel_all();
-        assert!(t.items().iter().all(|i| i.progress.get() == (0, 0)));
+        assert_eq!(t.items()[3].status, Status::Cancelled, "the queued one at once");
+        assert!(t.start_ready().is_empty());
         for id in [2, 3] {
             t.finish(id, Err(S3Error::Cancelled));
         }
